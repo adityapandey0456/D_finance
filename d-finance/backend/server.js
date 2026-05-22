@@ -860,48 +860,131 @@ app.post('/api/create-order', async (req, res) => {
   }
 });
 
-app.post('/api/cashfree/webhook', async (req, res) => {
+app.all('/api/cashfree/webhook', async (req, res) => {
 
   try {
 
-    console.log("Webhook:", req.body);
+    console.log("🔥 CASHFREE WEBHOOK HIT");
+    console.log("METHOD:", req.method);
+    console.log("BODY:", JSON.stringify(req.body, null, 2));
 
-    const paymentData = req.body.data.payment;
+    // ✅ Test request support
+    if (req.method === "GET") {
+      return res.status(200).json({
+        success: true,
+        message: "Webhook Active"
+      });
+    }
 
+    // ✅ Actual webhook payload
+    const paymentData = req.body?.data?.payment;
+
+    if (!paymentData) {
+
+      console.log("⚠️ No payment data received");
+
+      return res.status(200).json({
+        success: true,
+        message: "No payment payload"
+      });
+    }
+
+    console.log("💰 PAYMENT STATUS:", paymentData.payment_status);
+
+    // ✅ SUCCESS PAYMENT
     if (paymentData.payment_status === "SUCCESS") {
 
-      const loanId = paymentData.order.order_id;
+      const orderId = paymentData.order?.order_id;
 
-      // Payment Save
+      const amount = Number(paymentData.payment_amount || 0);
+
+      console.log("✅ SUCCESS PAYMENT FOR:", orderId);
+
+      // 🔥 Check duplicate payment
+      const existingPayment = await Payment.findOne({
+        paymentId: paymentData.cf_payment_id
+      });
+
+      if (existingPayment) {
+
+        console.log("⚠️ Duplicate payment ignored");
+
+        return res.status(200).json({
+          success: true,
+          message: "Duplicate payment"
+        });
+      }
+
+      // ✅ Save Payment
       const newPayment = new Payment({
+
         paymentId: paymentData.cf_payment_id,
-        loanId: loanId,
-        amount: paymentData.payment_amount,
+
+        loanId: orderId,
+
+        amount: amount,
+
         status: "Approved",
-        utr: "CASHFREE"
+
+        utr: "CASHFREE",
+
+        paymentMethod: paymentData.payment_method || "ONLINE",
+
+        customerPhone:
+          paymentData.customer_details?.customer_phone || ""
+
       });
 
       await newPayment.save();
 
-      // Loan Update
-      await Loan.findOneAndUpdate(
-        { loanId: loanId },
+      console.log("✅ Payment Saved");
+
+      // ✅ Update Loan
+      const updatedLoan = await Loan.findOneAndUpdate(
+
+        { loanId: orderId },
+
         {
           $inc: {
-            totalPaid: paymentData.payment_amount,
-            totalPending: -paymentData.payment_amount
+            totalPaid: amount,
+            totalPending: -amount
           }
-        }
+        },
+
+        { new: true }
+
       );
 
-      console.log("✅ Payment Auto Approved");
+      console.log("✅ Loan Updated");
+
+      // ✅ Auto close loan if completed
+      if (
+        updatedLoan &&
+        updatedLoan.totalPending <= 0
+      ) {
+
+        updatedLoan.status = "Paid";
+
+        await updatedLoan.save();
+
+        console.log("🎉 Loan Fully Paid");
+      }
+
+      console.log("✅ PAYMENT AUTO APPROVED");
     }
 
-    res.status(200).send("OK");
+    return res.status(200).json({
+      success: true
+    });
 
   } catch (err) {
+
+    console.log("❌ WEBHOOK ERROR:");
     console.log(err);
-    res.status(500).send("Error");
+
+    return res.status(500).json({
+      error: err.message
+    });
   }
 });
 
