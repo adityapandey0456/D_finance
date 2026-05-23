@@ -617,38 +617,86 @@ app.delete('/loans/:id', async (req, res) => {
   }
 });
 app.post('/api/admin/approve-payment/:paymentId', async (req, res) => {
+
   try {
+
     const { paymentId } = req.params;
 
-    // 1. Payment dhundo
+    // 1. Payment find
     const payment = await Payment.findById(paymentId);
-    if (!payment) return res.status(404).json({ error: "Payment not found" });
-    if (payment.status === 'Approved') return res.status(400).json({ error: "Already Approved" });
 
-    // 2. Payment Status Update karo
+    if (!payment) {
+
+      return res.status(404).json({
+        error: "Payment not found"
+      });
+    }
+
+    // Already approved check
+    if (payment.status === 'Approved') {
+
+      return res.status(400).json({
+        error: "Already Approved"
+      });
+    }
+
+    // 2. Approve payment
     payment.status = 'Approved';
     payment.verifiedAt = new Date();
+
     await payment.save();
 
-    // 3. 🔥 LOAN BALANCE UPDATE (Ye sabse zaroori hai)
-    // Hum Loan collection mein totalPaid badhayenge aur totalPending kam karenge
+    console.log("✅ Payment Approved");
+
+    // 3. Loan update
     const updatedLoan = await Loan.findOneAndUpdate(
+
       { loanId: payment.loanId },
-      { 
-        $inc: { 
-          totalPaid: payment.amount,      // Amount add karo
-          totalPending: -payment.amount   // Pending balance kam karo
+
+      {
+        $inc: {
+          totalPaid: payment.amount,
+          totalPending: -payment.amount
         }
       },
+
       { new: true }
+
     );
 
-    console.log(`✅ Balance Updated for Loan ${payment.loanId}. New Paid Total: ${updatedLoan.totalPaid}`);
+    // Loan not found
+    if (!updatedLoan) {
 
-    res.json({ success: true, message: "Payment Approved & Balance Updated!" });
+      return res.status(404).json({
+        error: "Loan not found"
+      });
+    }
+
+    console.log(`✅ Loan Updated: ${updatedLoan.loanId}`);
+
+    // 4. Auto close loan
+    if (updatedLoan.totalPending <= 0) {
+
+      updatedLoan.status = "Paid";
+
+      await updatedLoan.save();
+
+      console.log("🎉 Loan Fully Paid");
+    }
+
+    return res.json({
+      success: true,
+      message: "Payment Approved & Balance Updated!"
+    });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+
+    console.log("❌ APPROVE PAYMENT ERROR:");
+    console.log(err);
+
+    return res.status(500).json({
+      error: err.message
+    });
   }
 });
 app.post('/api/accountant/approve-payment/:id', async (req, res) => {
@@ -870,6 +918,7 @@ app.all('/api/cashfree/webhook', async (req, res) => {
 
     // ✅ Test request support
     if (req.method === "GET") {
+
       return res.status(200).json({
         success: true,
         message: "Webhook Active"
@@ -894,16 +943,31 @@ app.all('/api/cashfree/webhook', async (req, res) => {
     // ✅ SUCCESS PAYMENT
     if (paymentData.payment_status === "SUCCESS") {
 
-      const orderId = paymentData.order?.order_id;
+      const orderId =
+        paymentData.order?.order_id;
 
-      const amount = Number(paymentData.payment_amount || 0);
+      const amount =
+        Number(paymentData.payment_amount || 0);
 
       console.log("✅ SUCCESS PAYMENT FOR:", orderId);
 
-      // 🔥 Check duplicate payment
-      const existingPayment = await Payment.findOne({
-        paymentId: paymentData.cf_payment_id
-      });
+      // ✅ Amount validation
+      if (amount <= 0) {
+
+        console.log("❌ Invalid payment amount");
+
+        return res.status(400).json({
+          error: "Invalid payment amount"
+        });
+      }
+
+      // 🔥 Duplicate payment protection
+      const existingPayment =
+        await Payment.findOne({
+
+          paymentId:
+            paymentData.cf_payment_id
+        });
 
       if (existingPayment) {
 
@@ -915,20 +979,40 @@ app.all('/api/cashfree/webhook', async (req, res) => {
         });
       }
 
+      // ✅ Find Loan
+      const loan = await Loan.findOne({
+        loanId: orderId
+      });
+
+      if (!loan) {
+
+        console.log("❌ Loan not found");
+
+        return res.status(404).json({
+          error: "Loan not found"
+        });
+      }
+
       // ✅ Save Payment
       const newPayment = new Payment({
 
-        paymentId: paymentData.cf_payment_id,
+        paymentId:
+          paymentData.cf_payment_id,
 
-        loanId: orderId,
+        loanId:
+          loan.loanId,
 
-        amount: amount,
+        amount:
+          amount,
 
-        status: "Approved",
+        status:
+          "Approved",
 
-        utr: "CASHFREE",
+        utr:
+          "CASHFREE",
 
-        paymentMethod: paymentData.payment_method || "ONLINE",
+        paymentMethod:
+          paymentData.payment_method || "ONLINE",
 
         customerPhone:
           paymentData.customer_details?.customer_phone || ""
@@ -940,28 +1024,34 @@ app.all('/api/cashfree/webhook', async (req, res) => {
       console.log("✅ Payment Saved");
 
       // ✅ Update Loan
-      const updatedLoan = await Loan.findOneAndUpdate(
+      const updatedLoan =
+        await Loan.findByIdAndUpdate(
 
-        { loanId: orderId },
+          loan._id,
 
-        {
-          $inc: {
-            totalPaid: amount,
-            totalPending: -amount
-          }
-        },
+          {
+            $inc: {
+              totalPaid: amount,
+              totalPending: -amount
+            }
+          },
 
-        { new: true }
+          { new: true }
 
-      );
+        );
 
       console.log("✅ Loan Updated");
 
-      // ✅ Auto close loan if completed
-      if (
-        updatedLoan &&
-        updatedLoan.totalPending <= 0
-      ) {
+      // ✅ Prevent negative balance
+      if (updatedLoan.totalPending < 0) {
+
+        updatedLoan.totalPending = 0;
+
+        await updatedLoan.save();
+      }
+
+      // ✅ Auto close loan
+      if (updatedLoan.totalPending <= 0) {
 
         updatedLoan.status = "Paid";
 
@@ -987,7 +1077,6 @@ app.all('/api/cashfree/webhook', async (req, res) => {
     });
   }
 });
-
 // --- START SERVER ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 D-Finance Engine Running on Port ${PORT}`));
