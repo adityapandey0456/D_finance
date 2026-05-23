@@ -776,7 +776,7 @@ app.post('/api/create-order', async (req, res) => {
 
   order_currency: "INR",
 
-  order_id: loanId,
+  order_id: loan.loanId,
 
   customer_details: {
     customer_id: loanId,
@@ -891,7 +891,7 @@ app.all('/api/cashfree/webhook', async (req, res) => {
   req.body?.data?.customer_details?.customer_id;
 
 const loan = await Loan.findOne({
-  loanId: orderId
+  loanId: data.order.order_id 
 });
 
       if (!loan) {
