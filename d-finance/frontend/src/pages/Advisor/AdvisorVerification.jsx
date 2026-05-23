@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import API from '../../api/axios';
 import { 
-  FiCamera, FiUpload, FiX, FiCheckCircle, FiUser, 
-  FiHome, FiShield, FiBriefcase, FiCreditCard, FiMapPin, FiInfo, FiUsers, FiPhone, FiArrowRight, FiArrowLeft
+  FiCamera, FiX, FiUser, FiHome, FiShield, FiBriefcase, 
+  FiCreditCard, FiMapPin, FiInfo, FiUsers, FiPhone, FiArrowRight, FiArrowLeft
 } from 'react-icons/fi';
 
 const AdvisorVerification = () => {
@@ -12,30 +12,20 @@ const AdvisorVerification = () => {
   const [addressName, setAddressName] = useState('Detecting location...');
   const [step, setStep] = useState(1);
   
-  // 🔥 FIXED: Field names now match exactly with Loan.js Model
+  // Custom Live Camera States
+  const [cameraActive, setCameraActive] = useState(false);
+  const [activeCameraField, setActiveCameraField] = useState(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+
   const [fieldForm, setFieldForm] = useState({
     religion: 'HINDU', category: 'GENERAL', houseType: 'CONCRETE', areaType: 'RURAL', residenceNature: 'Owned',
     monthlyIncome: '', expenditure: '', familyIncomeActivities: 'Business', memberOccupation: '', 
     nomineeName: '', nomineeDOB: '', nomineeAge: '', nomineeGender: 'MALE', nomineeUID: '', nomineeVoterId: '', nomineeMobile: '', 
     nomineeRelation: 'SPOUSE', nomineeAddress: '', nomineeCategory: 'GENERAL',
     
-    custLivePhoto: '', 
-    custAadhaarFront: '', // Database key yahi hai
-    custAadhaarBack: '',  // Database key yahi hai
-    custVoterFront: '',   // Voter/PAN ke liye
-    custSignature: '',    // Signature ke liye
-    nomineePic: '', 
-    passbookPic: '',      // Passbook ke liye
-    secondaryIdBack: '',
-    // 👇 Key Fix: Exact Backend Field Names
-    // custLivePhoto: '', 
-    // custAadhaarFront: '', 
-    // custAadhaarBack: '', 
-    // custVoterFront: '', // Added for Voter/PAN mapping
-    // custSignature: '', 
-    // nomineePic: '', 
-    // passbookPic: '', // Added for Passbook mapping
-
+    custLivePhoto: '', custAadhaarFront: '', custAadhaarBack: '', custVoterFront: '',   
+    custSignature: '', nomineePic: '', passbookPic: '', secondaryIdBack: '',
     ifscCode: '', bankAccountNumber: '', confirmAccountNumber: '', accountHolderName: '', customerMobile: '', loanId: '', customerId: '',
     locationName: ''
   });
@@ -89,20 +79,49 @@ const AdvisorVerification = () => {
 
   useEffect(() => { fetchMyRequests(); }, [fetchMyRequests]);
 
-  const handleImageInput = (e, field) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) return alert("Photo size too big (Max 5MB)");
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFieldForm(prev => ({ ...prev, [field]: reader.result }));
-      };
-      reader.readAsDataURL(file);
+  // 🔥 CUSTOM CAMERA HARDWARE HANDLERS
+  const startCamera = async (field) => {
+    setActiveCameraField(field);
+    setCameraActive(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } }, 
+        audio: false
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera Access Error: ", err);
+      alert("❌ Camera open nahi ho paya. Device settings mein parameters permissions check karein.");
+      setCameraActive(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    setCameraActive(false);
+    setActiveCameraField(null);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      
+      const base64Image = canvas.toDataURL('image/jpeg');
+      setFieldForm(prev => ({ ...prev, [activeCameraField]: base64Image }));
+      stopCamera();
     }
   };
 
   const handleSOPSubmit = async () => {
-    // 🔥 FIXED: Check mandatory fields with updated names
     if (!fieldForm.custLivePhoto || !fieldForm.custAadhaarFront || !fieldForm.custSignature) {
       return alert("⚠️ Error: Please capture all mandatory photos (Customer, Aadhar, Signature) before submission.");
     }
@@ -158,6 +177,9 @@ const AdvisorVerification = () => {
               <button onClick={() => handleOpenForm(loan)} style={verifyBtn}>Conduct Visit</button>
             </div>
           ))}
+          {myPendingLoans.length === 0 && (
+            <p style={{ gridColumn: '1/-1', textAlign: 'center', color: '#94a3b8', fontWeight: 'bold', fontSize: '13px', padding: '40px 0' }}>NO PENDING FILES FOUND</p>
+          )}
         </div>
       ) : (
         <div style={modalOverlay}>
@@ -209,21 +231,21 @@ const AdvisorVerification = () => {
               )}
 
               {/* PAGE 3: KYC EVIDENCE */}
-{step === 3 && (
-  <div className="animate-fade">
-      <h4 style={sectionTitle}><FiCamera /> 3. KYC Evidence</h4>
-      <div className="doc-resp-grid" style={docGrid}>
-          {/* Ye keys ab database mein sahi jagah jayengi */}
-          <CaptureBox label="Customer Photo *" field="custLivePhoto" value={fieldForm.custLivePhoto} onInput={handleImageInput} />
-          <CaptureBox label="Aadhar Front *" field="custAadhaarFront" value={fieldForm.custAadhaarFront} onInput={handleImageInput} />
-          <CaptureBox label="Aadhar Back *" field="custAadhaarBack" value={fieldForm.custAadhaarBack} onInput={handleImageInput} />
-          <CaptureBox label="Voter/PAN" field="custVoterFront" value={fieldForm.custVoterFront} onInput={handleImageInput} />
-          <CaptureBox label="Signature *" field="custSignature" value={fieldForm.custSignature} onInput={handleImageInput} />
-          <CaptureBox label="Nominee Pic" field="nomineePic" value={fieldForm.nomineePic} onInput={handleImageInput} />
-          <CaptureBox label="Passbook" field="passbookPic" value={fieldForm.passbookPic} onInput={handleImageInput} />
-      </div>
-  </div>
-)}
+              {step === 3 && (
+                <div className="animate-fade">
+                    <h4 style={sectionTitle}><FiCamera /> 3. KYC Evidence</h4>
+                    <div className="doc-resp-grid" style={docGrid}>
+                        <CaptureBox label="Customer Photo *" field="custLivePhoto" value={fieldForm.custLivePhoto} onStartCamera={startCamera} />
+                        <CaptureBox label="Aadhar Front *" field="custAadhaarFront" value={fieldForm.custAadhaarFront} onStartCamera={startCamera} />
+                        <CaptureBox label="Aadhar Back *" field="custAadhaarBack" value={fieldForm.custAadhaarBack} onStartCamera={startCamera} />
+                        <CaptureBox label="Voter/PAN" field="custVoterFront" value={fieldForm.custVoterFront} onStartCamera={startCamera} />
+                        <CaptureBox label="Signature *" field="custSignature" value={fieldForm.custSignature} onStartCamera={startCamera} />
+                        <CaptureBox label="Nominee Pic" field="nomineePic" value={fieldForm.nomineePic} onStartCamera={startCamera} />
+                        <CaptureBox label="Passbook" field="passbookPic" value={fieldForm.passbookPic} onStartCamera={startCamera} />
+                    </div>
+                </div>
+              )}
+              
               <div style={footerAction}>
                 {step > 1 ? (
                     <button type="button" onClick={prevStep} style={cancelBtn}>BACK</button>
@@ -243,11 +265,32 @@ const AdvisorVerification = () => {
           </div>
         </div>
       )}
+
+      {/* 🔥 OVERLAY MODEL FOR IN-BROWSER SECURE LIVE WEBCAM FEED */}
+      {cameraActive && (
+        <div style={camModalOverlay}>
+          <div style={camModalContent}>
+            <div style={camModalHeader}>
+              <span style={{ mountaineering: 'none', fontWeight: 900, fontSize: '11px' }}>🔒 D-FINANCE LIVE STREAM INTERFACE</span>
+              <FiX onClick={stopCamera} style={{ cursor: 'pointer', fontSize: '20px' }} />
+            </div>
+            <div style={videoWrapper}>
+              <video ref={videoRef} autoPlay playsInline style={videoFeedElement}></video>
+            </div>
+            <div style={camActionRow}>
+              <button type="button" onClick={capturePhoto} style={snapButtonStyle}>
+                <FiCamera size={18} /> CAPTURE EVIDENCE
+              </button>
+              <button type="button" onClick={stopCamera} style={abortButtonStyle}>CLOSE</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-// Sub-components and Styles remain the same...
+// Stateless Form Sub-Components
 const InputField = ({ label, type = "text", value, onChange, readOnly = false }) => (
   <div style={inputGroup}>
     <label style={labelStyle}>{label}</label>
@@ -264,28 +307,28 @@ const SelectField = ({ label, options, value, onChange }) => (
   </div>
 );
 
-const CaptureBox = ({ label, field, value, onInput }) => {
-  const fileRef = useRef(null);
-  const camRef = useRef(null);
-  const openGallery = (e) => { e.preventDefault(); fileRef.current.click(); };
-  const openCamera = (e) => { e.preventDefault(); camRef.current.click(); };
+const CaptureBox = ({ label, field, value, onStartCamera }) => {
   return (
     <div style={upBox}>
       <label style={miniLabel}>{label}</label>
       <div style={btnRow}>
-        <button type="button" onClick={openGallery} style={smBtn}><FiUpload /> Gallery</button>
-        <button type="button" onClick={openCamera} style={smBtnPrimary}><FiCamera /> Camera</button>
+        <button type="button" onClick={() => onStartCamera(field)} style={smBtnPrimary}>
+          <FiCamera /> Open Secure Camera
+        </button>
       </div>
-      <input type="file" ref={fileRef} style={{display:'none'}} accept="image/*" onChange={(e) => onInput(e, field)} />
-      <input type="file" ref={camRef} style={{display:'none'}} accept="image/*" capture="environment" onChange={(e) => onInput(e, field)} />
       <div style={imgContainerPreview}>
-        {value ? <img src={value} style={imgPrev} alt="preview" /> : <div style={placeholderIcon}><FiCamera size={20} color="#cbd5e1"/></div>}
+        {value ? (
+          <img src={value} style={imgPrev} alt="Live Stream Captured Frame" />
+        ) : (
+          <div style={placeholderIcon}><FiCamera size={20} color="#cbd5e1"/></div>
+        )}
       </div>
     </div>
   );
 };
 
-const containerStyle = { padding: '20px', minHeight: '100vh', background: '#f8fafc' };
+// --- STYLESHEET DESIGNS WITH WEB-STREAM INTERFACE OVERRIDES ---
+const containerStyle = { padding: '20px', minHeight: '100vh', background: '#f8fafc', boxSizing: 'border-box' };
 const headerSection = { marginBottom: '30px', borderBottom: '2px solid #e2e8f0', paddingBottom: '15px' };
 const mainTitle = { color: '#0f172a', margin: 0, fontWeight: '900', fontSize: '20px' };
 const subTitle = { color: '#64748b', fontSize: '13px' };
@@ -309,19 +352,28 @@ const inputGroup = { display: 'flex', flexDirection: 'column', gap: '5px' };
 const labelStyle = { fontSize: '10px', fontWeight: '800', color: '#64748b' };
 const inputStyle = { padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline:'none' };
 const docGrid = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' };
-const upBox = { background: '#f8fafc', padding: '10px', borderRadius: '15px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '6px' };
+const upBox = { background: '#f8fafc', padding: '15px', borderRadius: '15px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '8px' };
 const miniLabel = { fontSize: '9px', fontWeight: '800', color: '#475569' };
 const btnRow = { display: 'flex', gap: '5px' };
-const smBtn = { flex: 1, padding: '8px 4px', fontSize: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'3px' };
-const smBtnPrimary = { ...smBtn, background: '#0f172a', color: '#fff', border: 'none' };
-const imgContainerPreview = { width: '100%', height: '70px', borderRadius: '8px', overflow: 'hidden', background: '#fff', border: '1px dashed #cbd5e1', display:'flex', alignItems:'center', justifyContent:'center', marginTop:'5px' };
+const smBtnPrimary = { width: '100%', padding: '10px', fontSize: '10px', borderRadius: '8px', background: '#0f172a', color: '#fff', border: 'none', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'4px', fontWeight: 'bold' };
+const imgContainerPreview = { width: '100%', height: '90px', borderRadius: '10px', overflow: 'hidden', background: '#fff', border: '1px dashed #cbd5e1', display:'flex', alignItems:'center', justifyContent:'center', marginTop:'5px' };
 const imgPrev = { width: '100%', height: '100%', objectFit: 'cover' };
 const placeholderIcon = { opacity: 0.3 };
-const locationBox = { background: '#f0f9ff', padding: '10px', borderRadius: '10px', color: '#0369a1', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '15px' };
 const footerAction = { display: 'flex', gap: '10px', marginTop: '25px', borderTop: '1px solid #f1f5f9', paddingTop: '20px' };
 const submitBtn = { flex: 2, padding: '14px', background: '#059669', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' };
 const cancelBtn = { flex: 1, padding: '14px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' };
 const statusMsg = { textAlign: 'center', marginTop: '100px', color: '#94a3b8' };
+
+// --- 🎥 IN-APP CAMERA WINDOW OVERLAYS STYLES ---
+const camModalOverlay = { position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '15px' };
+const camModalContent = { background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '480px', overflow: 'hidden' };
+const camModalHeader = { background: '#0f172a', color: '#fff', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' };
+const videoWrapper = { width: '100%', height: '340px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const videoFeedElement = { width: '100%', height: '100%', objectFit: 'cover' };
+const camActionRow = { padding: '15px', display: 'flex', gap: '10px', background: '#f8fafc' };
+const snapButtonStyle = { flex: 2, padding: '14px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' };
+const abortButtonStyle = { flex: 1, padding: '14px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' };
+
 const responsiveCSS = `
   @media (max-width: 600px) {
     .resp-grid { grid-template-columns: 1fr !important; }

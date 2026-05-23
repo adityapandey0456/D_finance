@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import API from '../../api/axios'; // Apna axios path sahi kar lena
-import { FiSearch, FiUser, FiCalendar, FiDollarSign, FiCreditCard, FiPrinter, FiCheckCircle, FiXCircle } from 'react-icons/fi';
+import React, { useState } from 'react';
+import API from '../../api/axios'; 
+import { FiSearch, FiUser, FiDollarSign, FiCheckCircle, FiXCircle } from 'react-icons/fi';
 
 const CollectionEntry = () => {
   const [searchId, setSearchId] = useState('');
@@ -12,55 +12,65 @@ const CollectionEntry = () => {
     remarks: ''
   });
 
-  // 1. Search Functionality (Live Data)
+  // 1. Unified Search Functionality (Name, Mobile number, or Loan ID)
   const handleSearch = async (e) => {
     if (e) e.preventDefault();
-    if (!searchId) return alert("Bhai, Loan ID toh daalo!");
+    if (!searchId.trim()) return alert("Bhai, Loan ID, Name ya Mobile Number toh daalo!");
 
     try {
       setLoading(true);
-      // Backend route: /admin/loan-details/:id
       const res = await API.get(`/admin/all-loans`); 
-      const foundLoan = res.data.find(l => 
-        l.loanId.toLowerCase() === searchId.toLowerCase() || 
-        l.mobile === searchId
+      const loansList = Array.isArray(res.data) ? res.data : [];
+
+      // 🔥 Mapped according to your live schema structural log
+      const foundLoan = loansList.find(l => 
+        (l?.loanId && l.loanId.toLowerCase() === searchId.trim().toLowerCase()) || 
+        (l?.customerName && l.customerName.toLowerCase().includes(searchId.trim().toLowerCase())) ||
+        (l?.customerMobile && l.customerMobile === searchId.trim()) ||
+        (l?.customerId?.mobile && l.customerId.mobile === searchId.trim())
       );
 
       if (foundLoan) {
         setLoanDetails(foundLoan);
-        console.log("Loan Found:", foundLoan);
+        console.log("Database Node Pull Success:", foundLoan);
       } else {
-        alert("Record Not Found! Sahi ID daalo.");
+        alert("Record Not Found! Sahi ID, Name ya Phone number daalo.");
         setLoanDetails(null);
       }
     } catch (err) {
-      console.error("Search Error:", err);
-      alert("Database error. Try again.");
+      console.error("Search Operational Error:", err);
+      alert("Database context pull failed.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. Submit Collection Logic
+  // Dynamic dynamic evaluation calculation check for active payment cycle amount
+  const activeEmiAmount = Number(loanDetails?.installmentAmount || loanDetails?.weeklyEMI || loanDetails?.dailyEMI || 0);
+  const finalTotalNet = activeEmiAmount + Number(paymentData.lateFine || 0);
+
+  // 2. Submit Collection Execution Logic
   const handleCollect = async () => {
-    if (!window.confirm(`Collect ₹${Number(loanDetails.weeklyEMI) + Number(paymentData.lateFine)} from ${loanDetails.customerName}?`)) return;
+    if (!window.confirm(`Collect ₹${finalTotalNet} from ${loanDetails?.customerName}?`)) return;
 
     try {
       setLoading(true);
       const res = await API.post(`/accountant/collect-emi`, {
         loanId: loanDetails.loanId,
-        amount: Number(loanDetails.weeklyEMI) + Number(paymentData.lateFine),
-        lateFine: paymentData.lateFine,
-        mode: paymentData.mode
+        amount: finalTotalNet,
+        lateFine: Number(paymentData.lateFine || 0),
+        mode: paymentData.mode,
+        remarks: paymentData.remarks
       });
 
       if (res.data.success) {
-        alert("✅ Payment Successful! Receipt Generated.");
+        alert("✅ Payment Successful! Core Ledger Adjusted.");
         setLoanDetails(null);
         setSearchId('');
+        setPaymentData({ lateFine: 0, mode: 'UPI/Online', remarks: '' });
       }
     } catch (err) {
-      alert("❌ Payment Failed: " + err.message);
+      alert("❌ Payment Failed: " + (err.response?.data?.error || err.message));
     } finally {
       setLoading(false);
     }
@@ -68,132 +78,149 @@ const CollectionEntry = () => {
 
   return (
     <div style={containerStyle}>
-      {/* --- HEADER --- */}
+      <style>{responsiveCSS}</style>
+      
+      {/* --- HEADER SYSTEM --- */}
       <div style={headerStyle}>
-        <h2 style={{ margin: 0, fontWeight: 900, fontSize: '26px', color: '#0f172a' }}>💸 EMI RECOVERY POINT</h2>
-        <p style={{ margin: '5px 0 0 0', color: '#64748b', fontSize: '13px', fontWeight: 'bold' }}>Process EMI Collection & Digital Receipts</p>
+        <h2 style={{ margin: 0, fontWeight: 900, fontSize: '24px', color: '#0f172a', letterSpacing: '-0.5px' }}>💸 EMI RECOVERY POINT</h2>
+        <p style={{ margin: '5px 0 0 0', color: '#64748b', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Process EMI Collection & Digital Receipts</p>
       </div>
 
-      {/* --- SEARCH BOX --- */}
-      <form onSubmit={handleSearch} style={searchCard}>
+      {/* --- SEARCH BOX CONTROL BAR --- */}
+      <form onSubmit={handleSearch} className="responsive-form-row" style={searchCard}>
         <div style={{ position: 'relative', flex: 1 }}>
           <FiSearch style={searchIcon} />
           <input 
             type="text" 
-            placeholder="Search by Loan ID (e.g. LN-9458) or Mobile Number..." 
+            placeholder="Enter Loan ID (e.g. LN-768994), Name, or Mobile..." 
             style={searchInput}
             value={searchId}
             onChange={(e) => setSearchId(e.target.value)}
           />
         </div>
-        <button type="submit" disabled={loading} style={fetchBtn}>
+        <button type="submit" disabled={loading} style={fetchBtn} className="responsive-btn">
           {loading ? 'Searching...' : 'Pull Records'}
         </button>
       </form>
 
-      {/* --- DETAILS SECTION --- */}
+      {/* --- DATA BOARD RESULTS CONTEXT --- */}
       {loanDetails && (
-        <div style={mainGrid} className="animate-in">
-          {/* Left: Digital Passport (Summary) */}
+        <div className="responsive-grid" style={mainGrid}>
+          
+          {/* Left Block: Digital Ticket Data Ledger Summary */}
           <div style={summaryCard}>
             <div style={cardHeader}>
-              <div style={badge}>ACTIVE FILE</div>
-              <FiUser size={20} color="#94a3b8" />
+              <div style={badge}>ACTIVE RECOVERY FILE</div>
             </div>
             
             <h3 style={custName}>{loanDetails.customerName}</h3>
-            <p style={loanIdText}>Ref: {loanDetails.loanId}</p>
+            <p style={loanIdText}>Internal Registry Reference: {loanDetails.loanId}</p>
 
             <div style={infoBox}>
-              <div style={infoRow}><span>Principal</span><b>₹{loanDetails.amount}</b></div>
-              <div style={infoRow}><span>Pending EMI</span><b>₹{loanDetails.weeklyEMI}</b></div>
-              <div style={infoRow}><span>OS Balance</span><b style={{color: '#ef4444'}}>₹{loanDetails.totalPending}</b></div>
+              <div style={infoRow}><span>Sanctioned Principal</span><b>₹{loanDetails.amount}</b></div>
+              <div style={infoRow}><span>Structured Installment</span><b>₹{activeEmiAmount} ({loanDetails.emiType || 'Daily'})</b></div>
+              <div style={infoRow}><span>Total Pending Balance</span><b style={{color: '#ef4444'}}>₹{(loanDetails.totalPending || 0).toLocaleString()}</b></div>
             </div>
 
             <div style={receiptVisual}>
-               <p style={{fontSize: '10px', fontWeight: 900, color: '#94a3b8', textAlign: 'center', marginBottom: '10px'}}>PAYMENT PREVIEW</p>
-               <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '20px', fontWeight: 900}}>
-                  <span>Total Net:</span>
-                  <span style={{color: '#10b981'}}>₹{Number(loanDetails.weeklyEMI) + Number(paymentData.lateFine)}</span>
+               <p style={{fontSize: '9px', fontWeight: 900, color: '#94a3b8', textAlign: 'center', marginBottom: '12px', letterSpacing: '1px'}}>LEDGER STATEMENT REPAYMENT PREVIEW</p>
+               <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: 900, color: '#0f172a'}}>
+                  <span>Total Net Receivable:</span>
+                  <span style={{color: '#10b981'}}>₹{finalTotalNet.toLocaleString()}</span>
                </div>
             </div>
           </div>
 
-          {/* Right: Payment Form */}
+          {/* Right Block: Manual Collection Entry Form Inputs */}
           <div style={formCard}>
-             <h4 style={formTitle}><FiDollarSign/> Transaction Details</h4>
+             <h4 style={formTitle}><FiDollarSign/> Operational Ledger Parameters</h4>
              
              <div style={inputGroup}>
-               <label style={labelStyle}>Apply Late Fine (₹)</label>
+               <label style={labelStyle}>Apply Delayed Fine Penalty (₹)</label>
                <input 
                  type="number" 
                  style={formInput} 
                  value={paymentData.lateFine}
+                 min="0"
                  onChange={(e) => setPaymentData({...paymentData, lateFine: e.target.value})}
                />
              </div>
 
              <div style={inputGroup}>
-               <label style={labelStyle}>Payment Method</label>
+               <label style={labelStyle}>Payment Pipeline Channel</label>
                <select 
                  style={formInput}
                  value={paymentData.mode}
                  onChange={(e) => setPaymentData({...paymentData, mode: e.target.value})}
                >
-                 <option value="UPI/Online">UPI / Digital QR</option>
-                 <option value="Cash">Direct Cash</option>
+                 <option value="UPI/Online">UPI / Digital QR Code</option>
+                 <option value="Cash">Direct Physical Cash</option>
                  <option value="Bank Transfer">Bank Transfer (IMPS/NEFT)</option>
                </select>
              </div>
 
              <div style={inputGroup}>
-               <label style={labelStyle}>Official Remarks</label>
+               <label style={labelStyle}>Official Entry Remarks / Notes</label>
                <input 
-                 placeholder="e.g. Paid by brother"
+                 type="text"
+                 placeholder="e.g. Field collected by officer node"
                  style={formInput}
+                 value={paymentData.remarks}
                  onChange={(e) => setPaymentData({...paymentData, remarks: e.target.value})}
                />
              </div>
 
-             <button onClick={handleCollect} disabled={loading} style={confirmBtn}>
-               <FiCheckCircle /> {loading ? 'Processing...' : 'Confirm & Generate Receipt'}
-             </button>
-             <button onClick={() => setLoanDetails(null)} style={cancelBtn}><FiXCircle/> Cancel</button>
+             <div style={{display:'flex', flexDirection:'column', gap:'10px', marginTop:'25px'}}>
+               <button onClick={handleCollect} disabled={loading} style={confirmBtn}>
+                 {loading ? 'Adjusting Database...' : 'Confirm & Reconcile Balances'}
+               </button>
+               <button type="button" onClick={() => setLoanDetails(null)} style={cancelBtn}><FiXCircle/> Cancel Entry Session</button>
+             </div>
           </div>
+          
         </div>
       )}
     </div>
   );
 };
 
-// --- STYLES (Professional & Enterprise) ---
-const containerStyle = { padding: '30px', background: '#f4f7fe', minHeight: '100vh', fontFamily: '"Inter", sans-serif' };
-const headerStyle = { marginBottom: '30px' };
+// --- ENTERPRISE SCOPE SPECIFIC INLINE STYLES ---
+const containerStyle = { padding: '25px', background: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', boxSizing: 'border-box' };
+const headerStyle = { marginBottom: '25px' };
+const searchCard = { background: '#fff', padding: '16px', borderRadius: '20px', display: 'flex', gap: '15px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #e2e8f0', marginBottom: '25px', boxSizing: 'border-box' };
+const searchIcon = { position: 'absolute', left: '20px', top: '18px', color: '#cbd5e1', zIndex: 10, fontSize: '18px' };
+const searchInput = { width: '100%', padding: '16px 16px 16px 50px', borderRadius: '14px', border: '1.5px solid #f1f5f9', background: '#f8fafc', outline: 'none', fontWeight: '800', fontSize: '14px', boxSizing: 'border-box', color: '#0f172a' };
+const fetchBtn = { background: '#0f172a', color: '#fff', border: 'none', borderRadius: '14px', padding: '16px 30px', fontWeight: '900', cursor: 'pointer', fontSize: '13px', textTransform: 'uppercase', tracking: '0.5px' };
 
-const searchCard = { background: '#fff', padding: '15px', borderRadius: '20px', display: 'flex', gap: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.02)', border: '1px solid #eee', marginBottom: '30px' };
-const searchIcon = { position: 'absolute', left: '20px', top: '15px', color: '#cbd5e1' };
-const searchInput = { width: '100%', padding: '15px 15px 15px 50px', borderRadius: '15px', border: '1.5px solid #f1f5f9', background: '#f8fafc', outline: 'none', fontWeight: 'bold' };
-const fetchBtn = { background: '#0f172a', color: '#fff', border: 'none', borderRadius: '15px', padding: '0 30px', fontWeight: '900', cursor: 'pointer' };
+const mainGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '25px' };
+const summaryCard = { background: '#fff', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxSizing: 'border-box' };
+const cardHeader = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' };
+const badge = { background: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', fontWeight: '900', letterSpacing: '0.5px' };
+const custName = { margin: 0, fontSize: '22px', fontWeight: '900', color: '#0f172a' };
+const loanIdText = { margin: '4px 0 20px 0', fontSize: '12px', color: '#94a3b8', fontWeight: 'bold' };
 
-const mainGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '25px' };
+const infoBox = { background: '#f8fafc', padding: '18px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px' };
+const infoRow = { display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#64748b', fontWeight: '700' };
+const receiptVisual = { marginTop: '25px', padding: '18px', border: '2px dashed #e2e8f0', borderRadius: '16px', background: '#fdfefe' };
 
-const summaryCard = { background: '#fff', padding: '30px', borderRadius: '30px', boxShadow: '0 20px 40px rgba(0,0,0,0.03)', border: '1px solid #fff' };
-const cardHeader = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' };
-const badge = { background: '#f0fdf4', color: '#16a34a', padding: '5px 12px', borderRadius: '8px', fontSize: '10px', fontWeight: '900' };
-const custName = { margin: 0, fontSize: '24px', fontWeight: '900', color: '#0f172a' };
-const loanIdText = { margin: '5px 0 25px 0', fontSize: '13px', color: '#94a3b8', fontWeight: 'bold' };
+const formCard = { background: '#fff', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxSizing: 'border-box' };
+const formTitle = { margin: '0 0 20px 0', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '950', textTransform: 'uppercase', color: '#1e293b' };
+const inputGroup = { marginBottom: '15px' };
+const labelStyle = { display: 'block', fontSize: '10px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', tracking: '0.5px' };
+const formInput = { width: '100%', padding: '14px', borderRadius: '12px', border: '1.5px solid #f1f5f9', background: '#f8fafc', fontWeight: '800', fontSize: '13px', boxSizing: 'border-box', color: '#0f172a' };
 
-const infoBox = { background: '#f8fafc', padding: '20px', borderRadius: '20px', display: 'flex', flexDirection: 'column', gap: '12px' };
-const infoRow = { display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#64748b' };
-const receiptVisual = { marginTop: '30px', padding: '20px', border: '2px dashed #e2e8f0', borderRadius: '20px' };
+const confirmBtn = { width: '100%', padding: '16px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '900', fontSize: '13px', textTransform: 'uppercase', tracking: '0.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', transition: '0.2s' };
+const cancelBtn = { width: '100%', background: 'none', border: 'none', color: '#94a3b8', fontWeight: '900', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', textTransform: 'uppercase', tracking: '0.5px' };
 
-const formCard = { background: '#fff', padding: '35px', borderRadius: '30px', border: '1px solid #eee' };
-const formTitle = { margin: '0 0 25px 0', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '18px', fontWeight: '900' };
-const inputGroup = { marginBottom: '20px' };
-const labelStyle = { display: 'block', fontSize: '11px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' };
-const formInput = { width: '100%', padding: '14px', borderRadius: '12px', border: '1.5px solid #f1f5f9', background: '#f8fafc', fontWeight: 'bold', boxSizing: 'border-box' };
-
-const confirmBtn = { width: '100%', padding: '18px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '18px', fontWeight: '900', fontSize: '15px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.2)' };
-const cancelBtn = { width: '100%', marginTop: '15px', background: 'none', border: 'none', color: '#94a3b8', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' };
+// Global CSS Injections for Mobile Layout Adaptations
+const responsiveCSS = `
+  @media (max-width: 640px) {
+    .responsive-form-row { flex-direction: column !important; gap: 10px !important; }
+    .responsive-btn { width: 100% !important; padding: 14px 0 !important; }
+    .responsive-grid { grid-template-columns: 1fr !important; }
+  }
+  .animate-in { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+`;
 
 export default CollectionEntry;

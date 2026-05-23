@@ -1,53 +1,67 @@
 const Loan = require('../models/Loan');
 const Payment = require('../models/Payment');
 
-// --- 1. UPDATE LOAN STATUS ---
+// --- 1. UPDATE LOAN STATUS & GEOTAG COORDINATES ---
 exports.updateLoanVerification = async (req, res) => {
     try {
+        const updateData = { ...req.body };
+
+        // 🔥 NEW: Check if frontend sent coordinates and format them correctly for MongoDB
+        if (req.body.coordinates) {
+            updateData.coordinates = {
+                lat: req.body.coordinates.lat || "",
+                lng: req.body.coordinates.lng || ""
+            };
+        }
+
         const updatedLoan = await Loan.findByIdAndUpdate(
             req.params.id,
-            { $set: req.body },
-            { new: true }
+            { $set: updateData },
+            { new: true, runValidators: true } // Validations apply honge updates par bhi
         );
-        if (!updatedLoan) return res.status(404).json({ success: false, error: "Loan not found" });
+
+        if (!updatedLoan) {
+            return res.status(404).json({ success: false, error: "Loan not found" });
+        }
+
         res.status(200).json(updatedLoan);
     } catch (err) {
+        console.error("❌ Loan Update Error:", err.message);
         res.status(500).json({ success: false, error: err.message });
     }
 };
 
-// --- 2. SUBMIT MANUAL PAYMENT (Image Fix Included) ---
+// --- 2. SUBMIT MANUAL PAYMENT (Image & Validation Fix) ---
 exports.payManual = async (req, res) => {
     try {
         const { loanId } = req.params;
-        // Direct body se data uthao safe side ke liye
         const data = req.body; 
 
         // 🔍 VS Code Terminal Debugging
-
         console.log("Loan ID Param:", loanId);
-        console.log("Customer:", data.customerName);
-        console.log("UTR:", data.utr);
-        // Agar yahan length 0 dikhaye, toh frontend fix karna padega
-        console.log("Screenshot Raw Length:", data.screenshot ? data.screenshot.length : "EMPTY (0)"); 
+        console.log("Customer:", data?.customerName);
+        console.log("UTR:", data?.utr);
+        console.log("Screenshot Raw Length:", data?.screenshot ? data.screenshot.length : "EMPTY (0)"); 
   
-        if (!data.screenshot || data.screenshot.length < 100) {
+        if (!data?.screenshot || data.screenshot.length < 100) {
             return res.status(400).json({ success: false, error: "Server received empty image. Please re-upload screenshot." });
         }
 
-        // Duplicate UTR check
+        // Duplicate UTR check (Null and empty string proof)
         if (data.utr && !["CASHFREE_PAY", "N/A", "", "NONE"].includes(data.utr.toUpperCase().trim())) {
             const existingUTR = await Payment.findOne({ utr: data.utr.trim() });
-            if (existingUTR) return res.status(400).json({ success: false, error: "UTR already exists!" });
+            if (existingUTR) {
+                return res.status(400).json({ success: false, error: "UTR already exists!" });
+            }
         }
 
         const newPayment = new Payment({
             loanId: loanId || data.loanId,
             customerId: data.customerId,
             customerName: data.customerName,
-            amount: Number(data.amount),
+            amount: Number(data.amount || 0),
             utr: data.utr || "N/A",
-            screenshot: data.screenshot, // 🔥 Force Save
+            screenshot: data.screenshot, 
             status: 'Pending',
             paymentDate: new Date()
         });
@@ -71,7 +85,7 @@ exports.rejectPayment = async (req, res) => {
     }
 };
 
-// --- 4. APPROVE PAYMENT ---
+// --- 4. APPROVE PAYMENT (With Repayment Ledger Integrity) ---
 exports.approvePayment = async (req, res) => {
     try {
         const { id } = req.params;
@@ -80,23 +94,33 @@ exports.approvePayment = async (req, res) => {
         const loan = await Loan.findOne({ loanId: loanId });
         if (!loan) return res.status(404).json({ success: false, error: "Loan ID mismatch!" });
 
+        // Safe setup for arrays if missing
+        if (!loan.repaymentHistory) {
+            loan.repaymentHistory = [];
+        }
+
         // History entry
         loan.repaymentHistory.push({
-            amount: Number(amount),
+            amount: Number(amount || 0),
             utr: utr || "Manual_Verified",
             date: new Date(),
             status: 'Approved'
         });
 
-        // Balance math
-        loan.totalPending = Math.max(0, (loan.totalPending || 0) - Number(amount));
-        loan.totalPaid = (loan.totalPaid || 0) + Number(amount);
+        // Balance math with safety fallbacks
+        const currentPending = Number(loan.totalPending || 0);
+        const currentPaid = Number(loan.totalPaid || 0);
+        const paidAmount = Number(amount || 0);
+
+        loan.totalPending = Math.max(0, currentPending - paidAmount);
+        loan.totalPaid = currentPaid + paidAmount;
 
         await loan.save();
         await Payment.findByIdAndDelete(id);
 
         res.status(200).json({ success: true, message: "Verified!" });
     } catch (err) {
+        console.error("❌ Payment Approval Error:", err.message);
         res.status(500).json({ success: false, error: "Approval failed." });
     }
 };

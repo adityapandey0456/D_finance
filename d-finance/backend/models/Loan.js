@@ -8,8 +8,8 @@ const LoanSchema = new mongoose.Schema({
     required: [true, "Loan ID is required"] 
   },
   paymentOrderId: {
-  type: String
-},
+    type: String
+  },
   customerId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
@@ -107,6 +107,12 @@ const LoanSchema = new mongoose.Schema({
   // --- 📍 SYSTEM & LOCATION ---
   locationName: { type: String }, 
   inspectionDate: { type: Date },
+  
+  // 🔥 NEW: Secure Live Geotagging Storage
+  coordinates: {
+    lat: { type: String, default: "" },
+    lng: { type: String, default: "" }
+  },
 
   // --- 📂 Categorization ---
   type: { 

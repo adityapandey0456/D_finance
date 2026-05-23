@@ -205,21 +205,25 @@ app.get('/api/loans', verifyToken, async (req, res) => {
 // Pool: Advisor picks new leads
 app.get('/api/officer/available-requests', verifyToken, async (req, res) => {
     try {
-        const userRole = req.user.role ? req.user.role.toLowerCase() : "";
+        const userRole = req.user?.role ? req.user.role.toLowerCase() : "";
         if (userRole !== 'user' && userRole !== 'admin') {
             return res.status(403).json({ error: "Access Denied" });
         }
 
-        // Fix: Shows both 'Applied' and 'Hold' leads
+        // 🔥 FIX: User table se mobile aur coordinates populate karein
         const unassigned = await Loan.find({ 
             isAssigned: false, 
-            status: { $in: ['Applied', 'Hold - Pending Assignment'] } 
-        }).sort({ createdAt: -1 });
-        
-        res.json(unassigned);
-    } catch (err) { res.status(500).json({ error: "Pool Fetch Error" }); }
-});
+            status: { $in: ['Applied', 'Hold - Pending Assignment', 'Verification Pending'] } 
+        })
+        .populate('customerId', 'mobile email') // 👈 User table se mobile fetch karein
+        .sort({ createdAt: -1 });
 
+        res.json(Array.isArray(unassigned) ? unassigned : []);
+    } catch (err) { 
+        console.error("Pool Fetch Error:", err.message);
+        res.status(500).json({ error: "Pool Fetch Error" }); 
+    }
+});
 // Accept Lead
 // Accept Lead Fix: Support for both MongoDB _id and custom loanId
 app.post('/api/officer/accept-loan/:id', verifyToken, async (req, res) => {
