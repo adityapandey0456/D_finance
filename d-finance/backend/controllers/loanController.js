@@ -24,14 +24,13 @@ exports.payManual = async (req, res) => {
         const data = req.body; 
 
         // 🔍 VS Code Terminal Debugging
-        console.log(">>>>>>> INCOMING PAYMENT DATA <<<<<<<");
+
         console.log("Loan ID Param:", loanId);
         console.log("Customer:", data.customerName);
         console.log("UTR:", data.utr);
         // Agar yahan length 0 dikhaye, toh frontend fix karna padega
         console.log("Screenshot Raw Length:", data.screenshot ? data.screenshot.length : "EMPTY (0)"); 
-        console.log(">>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<");
-
+  
         if (!data.screenshot || data.screenshot.length < 100) {
             return res.status(400).json({ success: false, error: "Server received empty image. Please re-upload screenshot." });
         }
