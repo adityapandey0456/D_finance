@@ -25,7 +25,7 @@ connectDB();
 app.use(cors({
   origin: [
     "http://localhost:5173",                   // Local Testing ke liye
-    // "https://d-finance-izsi.vercel.app",       // Aapka Frontend (Vercel)
+    "https://d-finance-izsi.vercel.app",       // Aapka Frontend (Vercel)
     "https://dfinance.space",
     "https://www.dfinance.space"               // Aapka Custom Domain (agar hai)
   ],
@@ -574,29 +574,16 @@ app.post('/api/accountant/approve/:id', async (req, res) => {
 app.get('/api/payments', async (req, res) => {
   try {
     const { customerId } = req.query;
-
-    if (!customerId) {
-      return res.status(400).json({
-        success: false,
-        message: "customerId required"
-      });
-    }
-
-    const payments = await Payment.find({ customerId })
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      payments
-    });
-
+    // 💡 Step 1: Check karo 'Payment' model top par require kiya hai?
+    // const Payment = require('./models/Payment');
+    
+    const payments = await Payment.find({ customerId }).sort({ createdAt: -1 });
+    
+    // 💡 Step 2: Hamesha array bhejo, bhale hi khali ho
+    res.status(200).json(payments); 
   } catch (err) {
     console.error("Fetch Error:", err);
-
-    res.status(500).json({
-      success: false,
-      payments: []
-    });
+    res.status(500).json([]); // Crash ki jagah empty array bhej do
   }
 });
 // 🔥 PERMANENT DELETE ROUTE
