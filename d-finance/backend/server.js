@@ -769,17 +769,23 @@ app.post('/api/create-order', async (req, res) => {
       customerPhone
     } = req.body;
 
+    // 🔥 REAL LOAN ID USE KARO
     const orderData = {
 
-      order_amount: amount,
+      order_amount: Number(amount),
 
       order_currency: "INR",
 
-      order_id: "ORDER_" + Date.now(),
+      // IMPORTANT
+      order_id: loanId,
 
       customer_details: {
+
+        // IMPORTANT
         customer_id: loanId,
+
         customer_name: customerName,
+
         customer_phone: customerPhone
       }
     };
@@ -787,7 +793,6 @@ app.post('/api/create-order', async (req, res) => {
     const response = await axios.post(
 
       "https://api.cashfree.com/pg/orders",
-
       orderData,
 
       {
@@ -807,7 +812,7 @@ app.post('/api/create-order', async (req, res) => {
     console.log("✅ CASHFREE RESPONSE:");
     console.log(response.data);
 
-    res.status(200).json(response.data);
+    return res.status(200).json(response.data);
 
   } catch (err) {
 
@@ -815,12 +820,13 @@ app.post('/api/create-order', async (req, res) => {
 
     if (err.response) {
       console.log(err.response.data);
+
       return res.status(500).json(err.response.data);
     }
 
     console.log(err.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: err.message
     });
   }
@@ -831,44 +837,49 @@ app.all('/api/cashfree/webhook', async (req, res) => {
   try {
 
     console.log("🔥 CASHFREE WEBHOOK HIT");
+
     console.log("METHOD:", req.method);
+
     console.log("BODY:", JSON.stringify(req.body, null, 2));
 
-    // ✅ Test request support
     if (req.method === "GET") {
+
       return res.status(200).json({
         success: true,
         message: "Webhook Active"
       });
     }
 
-    // ✅ Actual webhook payload
+    // 🔥 FIXED
     const paymentData = req.body?.data?.payment;
 
-    if (!paymentData) {
+    const orderData = req.body?.data?.order;
 
-      console.log("⚠️ No payment data received");
+    if (!paymentData || !orderData) {
+
+      console.log("⚠️ Invalid payload");
 
       return res.status(200).json({
-        success: true,
-        message: "No payment payload"
+        success: true
       });
     }
 
     console.log("💰 PAYMENT STATUS:", paymentData.payment_status);
 
-    // ✅ SUCCESS PAYMENT
     if (paymentData.payment_status === "SUCCESS") {
 
-      const orderId = paymentData.order?.order_id;
+      // 🔥 FIXED
+      const orderId = orderData.order_id;
+      console.log("ORDER ID:", orderId);
+      console.log("CUSTOMER ID:", req.body?.data?.customer_details?.customer_id);
 
       const amount = Number(paymentData.payment_amount || 0);
 
       console.log("✅ SUCCESS PAYMENT FOR:", orderId);
 
-      // 🔥 Check duplicate payment
+      // DUPLICATE CHECK
       const existingPayment = await Payment.findOne({
-        paymentId: paymentData.cf_payment_id
+        paymentId: String(paymentData.cf_payment_id)
       });
 
       if (existingPayment) {
@@ -876,53 +887,63 @@ app.all('/api/cashfree/webhook', async (req, res) => {
         console.log("⚠️ Duplicate payment ignored");
 
         return res.status(200).json({
-          success: true,
-          message: "Duplicate payment"
+          success: true
         });
       }
 
-      // ✅ Save Payment
-// Find loan first
-const loan = await Loan.findOne({ loanId: orderId });
+      // FIND LOAN
+      const customerId =
+  req.body?.data?.customer_details?.customer_id;
 
-if (!loan) {
-
-  console.log("❌ Loan not found");
-
-  return res.status(404).json({
-    error: "Loan not found"
-  });
-}
-
-// Save payment
-const newPayment = new Payment({
-
-  paymentId: paymentData.cf_payment_id,
-
-  loanId: loan._id,
-
-  amount: amount,
-
-  status: "Approved",
-
-  utr: "CASHFREE",
-
-  paymentMethod:
-    paymentData.payment_method || "ONLINE",
-
-  customerPhone:
-    paymentData.customer_details?.customer_phone || ""
-
+const loan = await Loan.findOne({
+  customerId: customerId
 });
 
-await newPayment.save();
+      if (!loan) {
 
-console.log("✅ Payment Saved");  
+        console.log("❌ Loan not found");
 
-      // ✅ Update Loan
+        return res.status(404).json({
+          error: "Loan not found"
+        });
+      }
+
+      console.log("✅ Loan Found:", loan.loanId);
+
+      // SAVE PAYMENT
+      const newPayment = new Payment({
+
+        paymentId: String(paymentData.cf_payment_id),
+
+        loanId: loan.loanId,
+
+        customerId: loan.customerId,
+
+        customerName: loan.customerName,
+
+        amount: amount,
+
+        status: "Approved",
+
+        utr:
+          paymentData.bank_reference || "CASHFREE",
+
+        paymentMethod: "ONLINE",
+
+        customerPhone:
+          req.body?.data?.customer_details?.customer_phone || "",
+
+        verifiedAt: new Date()
+      });
+
+      await newPayment.save();
+
+      console.log("✅ Payment Saved");
+
+      // UPDATE LOAN
       const updatedLoan = await Loan.findOneAndUpdate(
 
-        { loanId: orderId },
+        { loanId: loan.loanId },
 
         {
           $inc: {
@@ -931,13 +952,13 @@ console.log("✅ Payment Saved");
           }
         },
 
-        { new: true }
+         { returnDocument: "after" }
 
       );
 
       console.log("✅ Loan Updated");
 
-      // ✅ Auto close loan if completed
+      // AUTO CLOSE
       if (
         updatedLoan &&
         updatedLoan.totalPending <= 0
@@ -960,6 +981,7 @@ console.log("✅ Payment Saved");
   } catch (err) {
 
     console.log("❌ WEBHOOK ERROR:");
+
     console.log(err);
 
     return res.status(500).json({
@@ -967,7 +989,6 @@ console.log("✅ Payment Saved");
     });
   }
 });
-
 // --- START SERVER ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 D-Finance Engine Running on Port ${PORT}`));
