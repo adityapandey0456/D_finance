@@ -51,14 +51,24 @@ const CustomerDashboard = () => {
 
   const totalDue = activeLoan ? (activeLoan.totalPending || (totalPayable - totalPaid)) : 0;
 
+  // Updated Gateway Trigger
   const openPayGateway = (loan) => {
     setSelectedLoan({
       ...loan,
-      installmentAmount: loan.weeklyEMI || loan.emiAmount || 0,
-      dueBalance: totalDue 
+      installmentAmount: loan.weeklyEMI || loan.installmentAmount || 0
     });
     setShowModal(true);
   };
+
+  // ... (inside return, at the very bottom)
+
+      {showModal && selectedLoan && (
+        <PaymentModal 
+          loan={selectedLoan} 
+          onClose={() => setShowModal(false)} 
+          onRefresh={fetchData} // Payment ke baad dashboard reload hoga
+        />
+      )}
 
   const getPaymentStatusStyle = (status) => {
     switch (status) {

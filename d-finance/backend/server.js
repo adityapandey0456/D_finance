@@ -1,60 +1,77 @@
 console.log("🔥 THIS IS ACTIVE SERVER FILE");
-require('dotenv').config(); 
+
+// 1. Core Modules (Sirf ek baar)
+require('dotenv').config();
 const express = require('express');
-const connectDB = require('./config/db'); 
 const cors = require('cors');
+const connectDB = require('./config/db');
+const adminRoutes = require('./routes/adminRoutes'); // File ka exact naam likho
+// 1. Import (V6 SDK ke liye)
+const { Cashfree } = require('cashfree-pg');
+
+// 2. IMPORTANT: Cashfree ka main object initialize karo
+// SDK v6 mein Cashfree variable khud ek object hai, 'new' use karne ki zarurat nahi hai
+const cf = Cashfree; 
+
+// 3. Properties set karo
+cf.XClientId = process.env.CASHFREE_APP_ID;
+cf.XClientSecret = process.env.CASHFREE_SECRET_KEY;
+// cf.XEnvironment = Cashfree.CFEnvironment.PRODUCTION; 
+Cashfree.XEnvironment = "PRODUCTION";
+
+// Ab `cf` ko use karo
+
+// Route mein call:
+
+// 3. Initialize Cashfree (Production Setup)
+Cashfree.XClientId = process.env.CASHFREE_APP_ID;
+Cashfree.XClientSecret = process.env.CASHFREE_SECRET_KEY;
+// Cashfree.XEnvironment = Cashfree.Environment.PRODUCTION;
+Cashfree.XEnvironment = "PRODUCTION";
+
+// 4. Models (Jo aapne import kiye the)
+const Loan = require('./models/Loan');
+const Payment = require('./models/Payment');
+const Blog = require('./models/Blog');
+const User = require('./models/User');
+
+// 5. Utility
+const axios = require("axios");
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-// server.js ke top par check karo aur ye add karo
-const Loan = require('./models/Loan');
-const Payment = require('./models/Payment'); // 🔥 IMPORTANT
-const Blog = require('./models/Blog');
-// const Cashfree = require("cashfree-pg");
-// Models Import
-const User = require('./models/User'); 
-const axios = require("axios");
-// const Loan = require('./models/Loan'); 
 
+// 6. App & Middlewares
 const app = express();
 
-// --- 1. DATABASE & MIDDLEWARES ---
+// Database Connection
 connectDB();
-// --- server.js mein cors settings ---
-// --- DATABASE & MIDDLEWARES KE BAAD ---
 
+// CORS Settings
 app.use(cors({
   origin: [
-    "http://localhost:5173",                   // Local Testing ke liye
-    "https://d-finance-izsi.vercel.app",       // Aapka Frontend (Vercel)
+    "http://localhost:5173",
+    "https://d-finance-izsi.vercel.app",
     "https://dfinance.space",
-    "https://www.dfinance.space"               // Aapka Custom Domain (agar hai)
+    "https://www.dfinance.space"
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   credentials: true,
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// Ye hamesha CORS ke niche hona chahiye
-// app.use(express.json());
+// Body Parser
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// --- EXTRA SAFETY FOR RENDER (Preflight fix) ---
+// Preflight Request Handler
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  // Agar request allow list se hai toh header set karein
-  if (origin && (origin.includes("localhost") || origin.includes("vercel.app") || origin.includes("onrender.com"))) {
-    res.header("Access-Control-Allow-Origin", origin);
-  }
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.header("Access-Control-Allow-Credentials", "true");
-
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
   next();
 });
+
+console.log("✅ Server configuration initialized successfully.");
 
 // --- 2. AUTH MIDDLEWARE ---
 const verifyToken = (req, res, next) => {
@@ -756,184 +773,71 @@ app.get('/api/loans/my-payments', verifyToken, async (req, res) => {
     }
 });
 
+// Route to fetch daily collection status
+app.get('/admin/daily-summary', async (req, res) => {
+    try {
+        const today = new Date().setHours(0,0,0,0);
+        const allLoans = await Loan.find({ status: 'Disbursed' });
+        
+        let summary = { total: 0, collected: 0, pending: 0, overdue: 0 };
+        
+        allLoans.forEach(loan => {
+            summary.total += 1;
+            // Overdue logic: agar last collection date aaj se pehle hai
+            if (new Date(loan.lastCollectionDate).setHours(0,0,0,0) < today) {
+                summary.overdue += 1;
+            } else if (new Date(loan.lastCollectionDate).setHours(0,0,0,0) === today) {
+                summary.collected += 1;
+            } else {
+                summary.pending += 1;
+            }
+        });
+        res.json(summary);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
 // 3. Fix: Accountant Add Karne Ka Logic (Signup Route Update)
 // Note: Aapka existing signup route hi kaam karega, bas dropdown mein 'Accountant' role bhejiye.
 
-app.post("/api/create-order", async (req, res) => {
+// server.js mein ye code add karo
 
-  try {
 
-    const {
-      loanId,
-      customerId,
-      amount,
-      customerName,
-      customerPhone
-    } = req.body;
+// server.js mein
+// server.js mein route update karo
+app.post('/api/create-order', async (req, res) => {
+    try {
+        const { amount, customer_id, customer_phone } = req.body;
+        const request = {
+            order_amount: Number(amount),
+            order_currency: "INR",
+            order_id: `ORD_${Date.now()}`,
+            customer_details: {
+                customer_id: customer_id,
+                customer_phone: customer_phone
+            }
+        };
 
-    if (!loanId) {
-      return res.status(400).json({
-        success: false,
-        message: "Loan ID missing"
-      });
+        // SDK Version 5+ ka sahi method call
+        const response = await Cashfree.PGCreateOrder("2023-08-01", request);
+        res.json({ success: true, payment_session_id: response.data.payment_session_id });
+    } catch (error) {
+        console.error("❌ SDK Error:", error.response?.data || error.message);
+        res.status(500).json({ success: false, message: "Payment failed" });
     }
-
-    const loan = await Loan.findById(loanId);
-
-    if (!loan) {
-      return res.status(404).json({
-        success: false,
-        message: "Loan not found"
-      });
-    }
-
-    const orderId =
-      `CFPay_${loanId}_${Date.now()}`;
-
-    const request = {
-      order_amount: amount,
-      order_currency: "INR",
-      order_id: orderId,
-
-      customer_details: {
-        customer_id: customerId,
-        customer_name: customerName,
-        customer_phone: customerPhone
-      },
-
-      order_meta: {
-        return_url:
-          "https://dfinance.space/customer/dashboard"
-      }
-    };
-
-    const response =
-      await cashfree.PGCreateOrder("2023-08-01", request);
-
-    await Payment.create({
-
-      loanId,
-      customerId,
-
-      cashfreeOrderId: orderId,
-
-      amount,
-
-      status: "PENDING",
-
-      paymentMethod: "CASHFREE"
-
-    });
-
-    res.json({
-      success: true,
-      payment_session_id:
-        response.data.payment_session_id
-    });
-
-  } catch (err) {
-
-    console.log(err);
-
-    res.status(500).json({
-      success: false,
-      message: "Order creation failed"
-    });
-  }
 });
+console.log("Available Methods:", Object.keys(cf));
 
-app.post("/api/cashfree/webhook", async (req, res) => {
-
-  try {
-
-    console.log("🔥 CASHFREE WEBHOOK HIT");
-
-    const data = req.body?.data;
-
-    if (!data) {
-      return res.status(400).json({
-        success: false
-      });
+app.post('/api/webhook', (req, res) => {
+    try {
+        const signature = req.headers["x-webhook-signature"];
+        // Secret Key se signature verify karna zaroori hai
+        Cashfree.PGVerifyWebhookSignature(JSON.stringify(req.body), signature, process.env.CASHFREE_SECRET_KEY);
+        
+        // Yahan DB Update logic likhein (Payment Success status)
+        console.log("✅ Webhook Received:", req.body.data.payment.payment_status);
+        res.status(200).send("OK");
+    } catch (err) {
+        res.status(400).send("Invalid Signature");
     }
-
-    const orderId =
-      data.order.order_id;
-
-    const paymentStatus =
-      data.payment.payment_status;
-
-    console.log("ORDER ID:", orderId);
-    console.log("STATUS:", paymentStatus);
-
-    const payment =
-      await Payment.findOne({
-        cashfreeOrderId: orderId
-      });
-
-    if (!payment) {
-
-      console.log("❌ Payment not found");
-
-      return res.status(404).json({
-        success: false,
-        message: "Payment not found"
-      });
-    }
-
-    const loan =
-      await Loan.findById(payment.loanId);
-
-    if (!loan) {
-
-      console.log("❌ Loan not found");
-
-      return res.status(404).json({
-        success: false,
-        message: "Loan not found"
-      });
-    }
-
-    if (paymentStatus === "SUCCESS") {
-
-      payment.status = "SUCCESS";
-
-      payment.cfPaymentId =
-        data.payment.cf_payment_id;
-
-      payment.paymentTime =
-        data.payment.payment_time;
-
-      await payment.save();
-
-      loan.totalPaid =
-        (loan.totalPaid || 0) +
-        payment.amount;
-
-      loan.remainingAmount =
-        (loan.remainingAmount || loan.loanAmount)
-        - payment.amount;
-
-      if (loan.remainingAmount <= 0) {
-        loan.loanStatus = "COMPLETED";
-      }
-
-      await loan.save();
-
-      console.log("✅ PAYMENT SUCCESS");
-    }
-
-    return res.status(200).json({
-      success: true
-    });
-
-  } catch (err) {
-
-    console.log("❌ WEBHOOK ERROR:", err);
-
-    return res.status(500).json({
-      success: false
-    });
-  }
 });
 // --- START SERVER ---
 const PORT = process.env.PORT || 5000;

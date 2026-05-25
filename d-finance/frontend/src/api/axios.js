@@ -1,46 +1,58 @@
 import axios from 'axios';
 
-const isLocal = window.location.hostname === 'localhost';
+// 🧭 AUTOMATIC ENVIRONMENT DETECTION ENGINE
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 const API = axios.create({
-  // baseURL: 'http://localhost:5000/api',
-  baseURL: 'https://dfinance.space/api', // ✅ Ye wala rehne do
+  // 🔥 AUTO-SWITCH MATRIX: Ab aapko baar-baar comment/uncomment nahi karna padega
+  baseURL: isLocal 
+    ? 'http://localhost:5000/api' 
+    : 'https://dfinance.space/api',
   withCredentials: true,
   timeout: 60000,
 });
 
+// ⏳ Request Interceptor: Injecting bearer token to outgoing network pipelines
+API.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  }, 
+  (error) => Promise.reject(error)
+);
 
-// Request Interceptor
-API.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-}, (error) => Promise.reject(error));
-
-// Response Interceptor
+// 📡 Response Interceptor: Evaluating responses incoming packet stream matrix
 API.interceptors.response.use(
   (response) => {
     console.log(`✅ [${response.config.method.toUpperCase()}] ${response.config.url}:`, response.data);
     return response;
   },
   (error) => {
-    console.error(`❌ API Error [${error.config?.url}]:`, error.response?.data || error.message);
+    // Structural normalization layer tracking
+    const errorData = error.response?.data;
+    console.error(`❌ API Error [${error.config?.url}]:`, errorData || error.message);
 
-    // 🚀 FIX: Agar error 401 hai LEKIN ye KYC ya Login/Signup route hai, toh logout MAT KARO
-    const isAuthRoute = error.config?.url.includes('/auth/') || error.config?.url.includes('/kyc/');
+    // 🚀 BYPASS RECONCILE: Agar error 401 (Unauthorized) hai LEKIN ye KYC ya Login/Signup route hai, toh logout MAT KARO
+    const isAuthRoute = error.config?.url?.includes('/auth/') || error.config?.url?.includes('/kyc/');
 
     if (error.response && error.response.status === 401 && !isAuthRoute) {
-      console.warn("Session expired. Logging out...");
+      console.warn("🛡️ Session expired or token cluster validation failed. Logging out...");
       localStorage.clear();
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
     }
     
-    // Backend ka asli error object pass karo taaki hum details dekh sakein
-    return Promise.reject(error.response?.data || "Connection Error");
+    // 🔥 SAFE REJECTION HOOK: Backend ka asli object ya message pass karo taaki runtime context break na ho
+    // Agar backend se poora HTML content (jaise 404 text) mil raha hai, toh use object format me wrap kar diya hai
+    if (typeof errorData === 'string' && errorData.includes('<!DOCTYPE html>')) {
+      return Promise.reject({ error: "Route validation endpoint missing. Please verify server routes register code map." });
+    }
+
+    return Promise.reject(errorData || { error: error.message || "Connection Error" });
   }
 );
 

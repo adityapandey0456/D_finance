@@ -4,11 +4,12 @@ const router = express.Router();
 // 1. Models Import
 const User = require('../models/User');
 const Loan = require('../models/Loan');
-const Payment = require('../models/Payment'); // 🔥 Added Payment Model
+const Payment = require('../models/Payment'); 
 
 // 2. Middleware & Controller Import
-const { verifyToken, isAdmin } = require('../middleware/auth'); 
-const loanController = require('../controllers/loanController'); // 🔥 Ensure controller is linked
+const { verifyToken, isAdmin } = require('../middlewares/authMiddleware');
+const loanController = require('../controllers/loanController'); 
+const cashfreeController = require('../controllers/cashfreeController'); // 🔥 Link this
 
 // --- 📊 DASHBOARD STATS ---
 router.get('/stats', verifyToken, isAdmin, async (req, res) => {
@@ -20,7 +21,6 @@ router.get('/stats', verifyToken, isAdmin, async (req, res) => {
         let totalRecovered = 0;
         loans.forEach(loan => {
             loan.repaymentHistory?.forEach(pay => {
-                // Check for 'Approved' or 'Success' status
                 if (pay.status === 'Approved' || pay.status === 'Success') {
                     totalRecovered += (pay.amount || 0);
                 }
@@ -33,9 +33,7 @@ router.get('/stats', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// --- 💰 PAYMENT VERIFICATION (Accountant/Admin Terminal) ---
-
-// 🔥 1. Get All Pending Manual Payments (Accountant Page Load)
+// --- 💰 PAYMENT VERIFICATION ---
 router.get('/pending-payments', verifyToken, isAdmin, async (req, res) => {
     try {
         const payments = await Payment.find({ status: 'Pending' }).sort({ createdAt: -1 });
@@ -45,15 +43,13 @@ router.get('/pending-payments', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// 🔥 2. Approve Payment (Deducts balance & adds to loan history)
 router.post('/approve-payment/:id', verifyToken, isAdmin, loanController.approvePayment);
-
-// 🔥 3. Reject & Delete Payment Receipt (Fixes your "Delete ni ho rha" issue)
 router.delete('/reject-payment/:id', verifyToken, isAdmin, loanController.rejectPayment);
 
+// --- 🔥 CASHFREE PAYMENT INTEGRATION ROUTE ---
+router.post('/cashfree/create-emi-order', verifyToken, cashfreeController.createEmiPaymentOrder);
 
 // --- 👥 USER & STAFF MANAGEMENT ---
-
 router.get('/all-customers', verifyToken, isAdmin, async (req, res) => {
     try {
         const customers = await User.find({ role: 'user' }).select('-password').sort({ createdAt: -1 });
@@ -67,6 +63,16 @@ router.get('/all-staff', verifyToken, isAdmin, async (req, res) => {
     try {
         const staff = await User.find({ role: { $ne: 'user' } }).select('-password').sort({ role: 1 });
         res.json(staff);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Route for "All Loans" required for DailyCollectionReport
+router.get('/all-loans', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const loans = await Loan.find().sort({ createdAt: -1 });
+        res.json(loans);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

@@ -35,7 +35,16 @@ const ApplyLoan = () => {
     const netDisbursed = principal - processingFee;
     const totalInterest = principal * 0.10 * months;
     const totalPayable = principal + totalInterest;
-    let totalInstallments = formData.type === 'Daily EMI' ? months * 30 : months * 4;
+    // let totalInstallments = formData.type === 'Daily EMI' ? months * 30 : months * 4;
+     let totalInstallments = 0;
+
+    if (formData.type === 'Daily EMI') {
+        totalInstallments = months * 30;
+    } else if (formData.type === 'Weekly EMI') {
+        totalInstallments = Math.round((months * 52) / 12);
+    } else {
+        totalInstallments = months;
+    }
     const installmentAmount = totalInstallments > 0 ? (totalPayable / totalInstallments) : 0;
     const lateFinePerEmi = installmentAmount * 0.10;
 
