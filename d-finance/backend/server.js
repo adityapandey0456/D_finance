@@ -65,8 +65,13 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Preflight Request Handler
 app.use((req, res, next) => {
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
+  res.header("Access-Control-Allow-Origin", req.headers.origin); // Dynamic origin allow karein
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200); // Pre-flight request ko turant allow karein
   }
   next();
 });
