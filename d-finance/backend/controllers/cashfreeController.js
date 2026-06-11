@@ -1,17 +1,17 @@
 const axios = require("axios");
-const Payment = require("../models/Payment"); // 🔥 Schema Path Reference
-const Loan = require("../models/Loan");       // 🔥 Schema Path Reference
-const User = require("../models/User");       // 🔥 NEW: True source of profile data for fallback engine
+const Payment = require("../models/Payment"); 
+const Loan = require("../models/Loan");       
+const User = require("../models/User");       
 const { createOrder } = require("../services/cashfreeService");
 
 // =========================================================================
-// 1️⃣ CONTROLLER: CREATE EMI PAYMENT ORDER (Auto Database Injection & Hybrid Lookup)
+// 1️⃣ CONTROLLER: CREATE EMI PAYMENT ORDER (Dynamic Production Registry)
 // =========================================================================
 exports.createEmiPaymentOrder = async (req, res) => {
   try {
     const { loanId, amount } = req.body;
     
-    // ⚡ STEP A: Frontend dependencies par trust khatam, direct DB look-up lagao core registry par
+    // 1. Core database registry lookup check
     const loan = await Loan.findOne({ loanId }); 
     if (!loan) {
       return res.status(404).json({
@@ -20,24 +20,23 @@ exports.createEmiPaymentOrder = async (req, res) => {
       });
     }
 
-    // ⚡ STEP B: Core profile validation mapping via Loan's customerId link
+    // 2. User profile deep fetch query for fallback compliance
     const userRecord = await User.findById(loan.customerId);
 
-    // Sandbox test tracing ke liye ek unique transaction order id matrix
-    const orderId = `CF_TEST_${loanId}_${Date.now()}`;
+    // 🔥 PRODUCTION ENV DETECTION: Keys ke mutabik environment matrix select karo
+    const isProd = process.env.CASHFREE_APP_ID && !process.env.CASHFREE_APP_ID.startsWith("TEST");
+    const orderId = `${isProd ? "CF_PROD" : "CF_TEST"}_${loanId}_${Date.now()}`;
 
-    // ⚡ HYBRID PHONE DETECTOR: Agar Loan doc me mobile khali hai "", toh direct User profile se uthayega
+    // Hybrid Phone & Email Normalization Engine
     const basePhone = loan.customerMobile || userRecord?.mobile || "9999999999"; 
     const cleanPhone = basePhone.replace(/\D/g, "").slice(-10);
-
-    // ⚡ HYBRID EMAIL DETECTOR
     const cleanEmail = userRecord?.email || "customer@dfinance.space";
 
-    // 2. Database mein explicit values map karke reference generate karo
+    // 3. Database ledger file creation
     await Payment.create({
       loanId: loan.loanId,
-      customerId: loan.customerId, // Schema linked ObjectId bind
-      customerName: loan.customerName || userRecord?.fullName || "Verified Client", // Real customer name validation
+      customerId: loan.customerId, 
+      customerName: loan.customerName || userRecord?.fullName || "Verified Client", 
       amount: parseFloat(amount),
       orderId: orderId,
       status: "Pending",
@@ -45,7 +44,7 @@ exports.createEmiPaymentOrder = async (req, res) => {
       gateway: "Cashfree"
     });
 
-    // 3. Cashfree API Payload Matrix taiyar karo (Dashboard Visibility Focus)
+    // 4. Cashfree API Payload Compilation
     const orderRequest = {
       order_id: orderId,
       order_amount: parseFloat(amount),
@@ -53,10 +52,9 @@ exports.createEmiPaymentOrder = async (req, res) => {
       customer_details: {
         customer_id: String(loan.customerId), 
         customer_phone: cleanPhone,
-        customer_name: loan.customerName || userRecord?.fullName || "Verified Client", // 🔥 Cashfree Dashboard me Real Client Name print karega
+        customer_name: loan.customerName || userRecord?.fullName || "Verified Client", 
         customer_email: cleanEmail
       },
-      // 🔥 Meta Parameters: Dashboard Transaction view me separate track filter karne ke liye
       order_tags: {
         "Loan_ID": String(loanId)
       },
@@ -65,14 +63,14 @@ exports.createEmiPaymentOrder = async (req, res) => {
       }
     };
 
-    // 4. Cashfree Sandbox API call handshake trigger karo
+    // 5. Gateway handshake request trigger
     const response = await createOrder(orderRequest);
 
     if (response && response.data) {
       return res.status(200).json({
         success: true,
         orderId: orderId,
-        payment_session_id: response.data.payment_session_id, // Frontend demands this
+        payment_session_id: response.data.payment_session_id, 
         cf_order_id: response.data.cf_order_id
       });
     }
@@ -80,7 +78,7 @@ exports.createEmiPaymentOrder = async (req, res) => {
     throw new Error("Empty response object payload received from gateway cluster.");
 
   } catch (error) {
-    console.log("========== CASHFREE SANDBOX CRITICAL ERROR ==========");
+    console.log("========== CASHFREE API CRITICAL ERROR ==========");
     console.error("Message:", error.message);
     if (error.response?.data) {
       console.error("Gateway Payload Error:", error.response.data);
@@ -114,19 +112,19 @@ exports.handleWebhook = async (req, res) => {
         return res.status(200).send("Record reference missing");
       }
 
-      // IDEMPOTENCY CHECK: Double transaction allocation guard mechanism
+      // Idempotency Lock: Stop double allocation mutations
       if (payment.status === "Approved") {
         return res.status(200).send("Already processed and mutated.");
       }
 
-      // Payment documentation status shift
+      // Ledger reference state shifting
       payment.status = "Approved";
       payment.utr = cfPaymentId;
       payment.cfPaymentId = cfPaymentId;
       payment.verifiedAt = new Date();
       await payment.save();
 
-      // Core Ledger Deductions pipeline execution (Atomic Shift)
+      // Core balance ledger execution pipeline
       await Loan.findOneAndUpdate(
         { loanId: payment.loanId },
         {
@@ -163,12 +161,11 @@ exports.getPaymentStatus = async (req, res) => {
       return res.status(404).json({ success: false, message: "Transaction file record missing" });
     }
 
-    // Anti-Loop Block: Agar pehle hi webhook se process ho chuka hai, skip server processing
     if (payment.status === "Approved") {
       return res.json({ success: true, status: "Approved", amount: payment.amount });
     }
 
-    // Live Gateway status verification network call sequence
+    // Dynamic verification endpoint switcher based on context
     const isProd = process.env.CASHFREE_APP_ID && !process.env.CASHFREE_APP_ID.startsWith("TEST");
     const baseURL = isProd 
       ? `https://api.cashfree.com/pg/orders/${orderId}` 
@@ -182,7 +179,7 @@ exports.getPaymentStatus = async (req, res) => {
       },
     });
 
-    // Gateway integrity state verify handler
+    // Integrity data checking logic
     if (cfResponse.data?.order_status === "PAID") {
       payment.status = "Approved";
       payment.utr = String(cfResponse.data.cf_order_id || orderId);
@@ -190,7 +187,7 @@ exports.getPaymentStatus = async (req, res) => {
       payment.verifiedAt = new Date();
       await payment.save();
 
-      // Double structural balancing pipeline trigger for pending states execution
+      // Core system balance sync engine fallback loop execution
       await Loan.findOneAndUpdate(
         { loanId: payment.loanId },
         {

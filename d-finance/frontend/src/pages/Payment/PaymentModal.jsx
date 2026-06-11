@@ -15,7 +15,6 @@ const PaymentModal = ({ loan, onClose }) => {
 
     try {
       // 1. Backend API se checkout order session create karo
-      // Backend internally Loan Schema se verified details automap kar lega
       const { data } = await API.post("/payments/create-order", {
         loanId: loan.loanId,
         amount: loan.installmentAmount,
@@ -39,17 +38,19 @@ const PaymentModal = ({ loan, onClose }) => {
         throw new Error("Payment Session ID not received from backend cluster.");
       }
 
-      // 2. Cashfree SDK Sandbox Initialization (Forced for test keys consistency on production)
+      // 🔥 PRODUCTION FIX: Automatically detect build mode environment
+      const isProduction = import.meta.env.PROD || import.meta.env.MODE === "production";
+      
       const cashfree = await load({
-        mode: "sandbox", 
+        mode: isProduction ? "production" : "sandbox", 
       });
 
-      console.log("🚀 Cashfree SDK safely initialized in [SANDBOX] mode for staging tracking");
+      console.log(`🚀 Cashfree SDK safely initialized in [${isProduction ? "PRODUCTION" : "SANDBOX"}] mode`);
 
       // 3. Checkout interface launch karo (Same window redirection flow)
       await cashfree.checkout({
         paymentSessionId: data.payment_session_id,
-        redirectTarget: "_self", // Redirects back gracefully to customer dashboard query strings
+        redirectTarget: "_self", // Dashboard par safe parameter return ke liye
       });
 
     } catch (err) {
