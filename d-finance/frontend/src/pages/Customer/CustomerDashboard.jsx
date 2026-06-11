@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom'; // 🔥 Active kiya useSearchParams
 import API from "../../api/axios";
 import PaymentModal from "../Payment/PaymentModal"; 
 import { 
   FiClock, FiCheckCircle, FiAlertCircle, FiActivity, 
   FiCreditCard, FiHash, FiInfo, FiArrowRight, FiXCircle 
 } from 'react-icons/fi';
-// import { useSearchParams } from "react-router-dom";
 
 const CustomerDashboard = () => {
   
@@ -16,6 +15,10 @@ const CustomerDashboard = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedLoan, setSelectedLoan] = useState(null);
   
+  // 🔥 URL Params Parser for Self-Healing Gateway Sync
+  const [searchParams, setSearchParams] = useSearchParams();
+  const orderId = searchParams.get("order_id");
+
   const user = JSON.parse(localStorage.getItem('user')) || {};
   const navigate = useNavigate();
 
@@ -35,11 +38,42 @@ const CustomerDashboard = () => {
     }
   }, [user.id, user._id]);
 
+  // Existing Polling Sync Loop
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 15000); 
     return () => clearInterval(interval); 
   }, [fetchData]);
+
+  // 🔥 NEW: Real-time Automated Local Sync Engine Trigger
+  useEffect(() => {
+    const verifyAndSyncPayment = async () => {
+      if (orderId) {
+        try {
+          console.log("🔄 Local Sync Engine Triggered for Order:", orderId);
+          
+          // Local Backend Engine ke status endpoint check pipeline ko hit karo
+          const { data } = await API.get(`/payments/status/${orderId}`);
+          
+          console.log("📥 Sync Engine Validation Response:", data);
+
+          if (data.status === "Approved") {
+            alert(`🎉 Payment Verified! ₹${data.amount} successfully deducted from your loan liability.`);
+            fetchData(); // Dashboard data ledger ko bina hard-refresh kiye instantly update karo
+          } else {
+            alert("Payment status is still processing or failed on gateway cluster.");
+          }
+        } catch (err) {
+          console.error("🚨 Local Sync Hook Exception Fault:", err);
+        } finally {
+          // URL se query parameters saaf karo taaki user ke manual reload par loop back na ho
+          setSearchParams({}); 
+        }
+      }
+    };
+
+    verifyAndSyncPayment();
+  }, [orderId, setSearchParams, fetchData]);
 
   // --- 📊 LOGIC & CALCULATIONS ---
   const activeLoan = loans.find(l => l.status === 'Disbursed' || l.status === 'Approved');
@@ -61,16 +95,6 @@ const CustomerDashboard = () => {
     });
     setShowModal(true);
   };
-
-  // ... (inside return, at the very bottom)
-
-      {showModal && selectedLoan && (
-        <PaymentModal 
-          loan={selectedLoan} 
-          onClose={() => setShowModal(false)} 
-          onRefresh={fetchData} // Payment ke baad dashboard reload hoga
-        />
-      )}
 
   const getPaymentStatusStyle = (status) => {
     switch (status) {
@@ -222,11 +246,11 @@ const CustomerDashboard = () => {
              <h4 style={sectionTitle}>💳 Recent Receipts</h4>
              {payments.slice(0, 3).map(p => (
                <div key={p._id} style={receiptMini}>
-                  <div>
-                    <p style={{margin:0, fontSize:'11px', fontWeight:'bold'}}>{new Date(p.createdAt).toLocaleDateString()}</p>
-                    <small style={{color:'#94a3b8'}}>{p.utr?.substring(0, 10)}...</small>
-                  </div>
-                  <b style={{color: p.status === 'Approved' ? '#10b981' : p.status === 'Rejected' ? '#ef4444' : '#f59e0b'}}>₹{p.amount}</b>
+                 <div>
+                   <p style={{margin:0, fontSize:'11px', fontWeight:'bold'}}>{new Date(p.createdAt).toLocaleDateString()}</p>
+                   <small style={{color:'#94a3b8'}}>{p.utr?.substring(0, 10)}...</small>
+                 </div>
+                 <b style={{color: p.status === 'Approved' ? '#10b981' : p.status === 'Rejected' ? '#ef4444' : '#f59e0b'}}>₹{p.amount}</b>
                </div>
              ))}
              {payments.length === 0 && <p style={emptyRow}>No payments found.</p>}
@@ -234,6 +258,7 @@ const CustomerDashboard = () => {
         </div>
       </div>
 
+      {/* Payment Gateway Modal Frame Link */}
       {showModal && selectedLoan && (
         <PaymentModal 
           loan={selectedLoan} 
@@ -245,7 +270,7 @@ const CustomerDashboard = () => {
   );
 };
 
-// --- Styles ---
+// --- Styles Vector Definition ---
 const container = { padding: '20px', maxWidth: '1100px', margin: '0 auto', minHeight: '100vh', background: '#f8fafc' };
 const headerFlex = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' };
 const portalTitle = { margin: 0, fontWeight: '950', fontSize: '24px', color: '#0f172a' };
@@ -271,7 +296,7 @@ const tableRow = { borderBottom: '1px solid #f8fafc', fontSize: '13px' };
 const emptyRow = { textAlign:'center', padding:'30px', color:'#cbd5e1', fontSize:'12px', fontWeight:'700' };
 const lockedState = { textAlign:'center', padding:'40px 0' };
 
-// Payment History New Styles
+// Payment History New Styles Definitions
 const historyList = { display: 'flex', flexDirection: 'column', gap: '12px' };
 const historyItem = { padding: '15px', borderRadius: '18px', background: '#f8fafc', border: '1px solid #f1f5f9' };
 const historyMain = { display: 'flex', justifyContent: 'space-between', alignItems: 'center' };
