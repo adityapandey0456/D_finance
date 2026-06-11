@@ -44,9 +44,12 @@ const PaymentModal = ({ loan, onClose }) => {
       // Vite production build me automatic 'production' select hoga, local par 'sandbox'
       const isProduction = import.meta.env.PROD || import.meta.env.MODE === "production";
       
+      // const cashfree = await load({
+      //   mode: isProduction ? "production" : "sandbox",
+      // });
       const cashfree = await load({
-        mode: isProduction ? "production" : "sandbox",
-      });
+        mode: "sandbox", 
+});
 
       console.log(`🚀 Cashfree SDK Initialized in [${isProduction ? "PRODUCTION" : "SANDBOX"}] mode`);
 
