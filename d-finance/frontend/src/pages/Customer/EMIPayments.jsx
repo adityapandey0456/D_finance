@@ -1,353 +1,422 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import API from '../../api/axios'; 
-import PaymentModal from '../Payment/PaymentModal'; 
+import API from '../../api/axios';
 import { 
-  FiArrowUpRight, FiArrowDownLeft, FiRefreshCw, FiChevronDown, 
-  FiChevronUp, FiCalendar, FiAlertCircle, FiClock, FiCheckCircle, FiInfo 
+  FiPrinter, FiUser, FiInfo, FiClock, FiRefreshCw, FiMapPin, FiCheckCircle
 } from 'react-icons/fi';
 
-const EMIPayments = () => {
+const CustomerReport = () => {
   const [loans, setLoans] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedLoan, setSelectedLoan] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-  const [payAmounts, setPayAmounts] = useState({});
-  const [activeLedger, setActiveLedger] = useState(null);
 
   const user = JSON.parse(localStorage.getItem('user')) || {};
 
-  const fetchData = useCallback(async () => {
+  const fetchMyData = useCallback(async () => {
     if (!user.id && !user._id) return;
     setLoading(true);
     try {
       const cId = user.id || user._id;
+      // 🔥 SECURITY: Fetching STRICTLY for the logged-in customer ID
       const [loanRes, payRes] = await Promise.all([
         API.get(`/loans?customerId=${cId}`),
         API.get(`/payments?customerId=${cId}`)
       ]);
 
-      const active = (loanRes.data || []).filter(l => l.status === 'Disbursed');
-      setLoans(active);
-      
-      const history = Array.isArray(payRes.data) ? payRes.data : [];
-      setPayments(history.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+      const myLoans = Array.isArray(loanRes.data) ? loanRes.data : [];
+      setLoans(myLoans);
+      setPayments(Array.isArray(payRes.data) ? payRes.data : []);
 
-      const initAmt = {};
-      active.forEach(l => { 
-        initAmt[l._id] = l.installmentAmount || l.dailyEMI || 200; 
-      });
-      setPayAmounts(initAmt);
     } catch (err) {
-      console.error("Ledger Sync Error:", err);
+      console.error("Failed to fetch customer profile data:", err);
     } finally {
       setLoading(false);
     }
   }, [user.id, user._id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchMyData();
+  }, [fetchMyData]);
 
-  // --- 📅 CALCULATE GLOBAL NEXT DUE DATE PARAMETER ---
-  const getNextDueDate = (loan) => {
-    const baseDate = new Date(loan.appliedDate || loan.updatedAt || Date.now());
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    
-    let nextDue = new Date(baseDate);
-    if (loan.emiType === 'Weekly EMI') {
-      nextDue.setDate(baseDate.getDate() + 7);
-    } else {
-      nextDue.setDate(baseDate.getDate() + 1);
-    }
-
-    if (nextDue < today) {
-      return "OVERDUE TODAY";
-    }
-    return nextDue.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const handlePrintAction = () => {
+    setTimeout(() => { window.print(); }, 150);
   };
 
-  const handlePay = (loan, amountOverride = null) => {
-    const amt = amountOverride || Number(payAmounts[loan._id]);
-    if (amt < 100) return alert("⚠️ Minimum payment ₹100 allowed.");
-    setSelectedLoan({ ...loan, customAmount: amt });
-    setShowModal(true);
+  const maskIdentityString = (idValue) => {
+    if (!idValue) return "N/A";
+    const str = String(idValue).trim();
+    if (str.length <= 4) return "XXXX-XXXX";
+    return `XXXX-XXXX-${str.slice(-4)}`;
   };
+
+  if (loading) return <div style={loaderStyle}>SYNCING YOUR SECURE PROFILE...</div>;
+
+  const printStyles = `
+    @media print {
+      body, html, #root, .portal-container, main, div, aside {
+        overflow: visible !important;
+        position: static !important;
+        height: auto !important;
+        max-height: none !important;
+        box-shadow: none !important;
+      }
+      body {
+        background: #ffffff !important;
+        color: #000000 !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        font-size: 10px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      .no-print { display: none !important; }
+      .print-dossier {
+        display: block !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        z-index: 99999 !important;
+      }
+      @page {
+        size: A4 portrait;
+        margin: 15mm 12mm 15mm 12mm;
+      }
+      .dossier-print-card-layout {
+        border: 2px solid #000000 !important;
+        padding: 20px !important;
+        margin-bottom: 25px !important;
+        page-break-inside: auto !important;
+        background: #ffffff !important;
+      }
+    }
+  `;
 
   return (
-    <div className="ledger-container" style={masterPageStyle}>
-      <style>{animations}</style>
+    <div style={masterPageStyle}>
+      <style>{printStyles}</style>
 
-      {/* --- HEADER --- */}
-      <div style={headerSection} className="mobile-header">
+      {/* =========================================================================
+          1️⃣ ACTIONS HEADER BAR (Screen Only)
+         ========================================================================= */}
+      <div className="no-print" style={headerStyle}>
         <div>
-          <h2 style={titleStyles}>🏦 D-FINANCE LEDGER</h2>
-          <p style={subStyles}>Real-time EMI Tracking & Verified Statements</p>
+          <h2 style={titleStyles}>📋 MY LOAN STATEMENT</h2>
+          <p style={subStyles}>View your complete profile, KYC, and EMI schedule.</p>
         </div>
-        <button onClick={fetchData} style={syncBtn} className="hover-scale">
-          <FiRefreshCw /> Sync Ledger
-        </button>
+
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button onClick={fetchMyData} style={refreshBtn}>
+            <FiRefreshCw /> Resync Data
+          </button>
+          <button onClick={handlePrintAction} style={printSummaryBtn}>
+            <FiPrinter /> Download / Print Report
+          </button>
+        </div>
       </div>
 
-      {loading ? (
-        <div style={loaderBox}>
-            <div className="spinner"></div>
-            <p style={{fontWeight: 'bold', color: '#64748b'}}>Verifying Database Integrity...</p>
-        </div>
-      ) : (
-        <>
-          {/* --- ACTIVE LOAN CARDS --- */}
-          <div className="loan-grid" style={gridStyles}>
-            {loans.length > 0 ? loans.map(loan => {
-              const loanPayments = payments.filter(p => 
-                p.loanId?.toString() === loan.loanId?.toString() && p.status?.toLowerCase() === 'approved'
-              );
-              
-              const totalRepaid = loanPayments.reduce((sum, p) => sum + Number(p.amount), 0);
-              const netRemaining = (Number(loan.totalPayable) || 0) - totalRepaid;
-              const emiAmt = loan.installmentAmount || loan.dailyEMI || 200;
-              const inputAmt = payAmounts[loan._id] || 0;
-              const nextDate = getNextDueDate(loan);
+      {/* =========================================================================
+          2️⃣ SCREEN VIEW (Interactive Customer Profile View)
+         ========================================================================= */}
+      <div className="no-print">
+        {loans.length > 0 ? loans.map((loan) => (
+          <div key={loan._id} style={profileCardPane}>
+            
+            {/* PROFILE IMAGE & BASIC INFO */}
+            <div style={profileHeader}>
+              <img 
+                src={loan.custLivePhoto || user?.photo || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"} 
+                alt="My Profile" 
+                style={sidebarAvatarStyle}
+                onError={(e) => { e.target.src = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"; }}
+              />
+              <div>
+                <h4 style={customerNameStyle}>{loan.customerName}</h4>
+                <span style={miniFileIdBadge}>LOAN ID: {loan.loanId}</span>
+                <span style={{...miniFileIdBadge, background: loan.status === 'Disbursed' ? '#10b981' : '#f59e0b', marginLeft: '8px'}}>
+                  {loan.status?.toUpperCase()}
+                </span>
+              </div>
+            </div>
 
-              // Max dynamic rows calculation tracker
-              const totalInstallmentsCount = loan.totalInstallments || 10;
+            {/* BALANCE METRICS */}
+            <div style={ledgerBreakdownContainer}>
+              <div style={ledgerMiniCard}><span>Sanctioned Principal</span><strong>₹{Number(loan.amount || 0).toLocaleString('en-IN')}</strong></div>
+              <div style={ledgerMiniCard}><span>Total Repaid</span><strong style={{ color: '#10b981' }}>₹{Number(loan.totalPaid || 0).toLocaleString('en-IN')}</strong></div>
+              <div style={{...ledgerMiniCard, borderBottom: 'none', paddingBottom: 0}}><span>Remaining Dues</span><strong style={{ color: '#f43f5e' }}>₹{Number(loan.totalPending || 0).toLocaleString('en-IN')}</strong></div>
+            </div>
 
-              return (
-                <div key={loan._id} style={cardStyles} className="card-hover">
-                  <div style={cardHeader}>
-                    <span style={loanIdTag}>FILE ID: {loan.loanId}</span>
-                    <span style={liveBadge}>● {loan.emiType?.toUpperCase()}</span>
+            {/* COMPREHENSIVE DETAILS GRID */}
+            <div style={metaHeadingStyle}><FiInfo /> My Submitted Application Details</div>
+            <div style={metaMetricsBlock}>
+              <div style={metaRow}><span>Nominee Name</span><span style={metaValue}>{loan.nomineeName || 'N/A'}</span></div>
+              <div style={metaRow}><span>Nominee Relation</span><span style={metaValue}>{loan.nomineeRelation || 'N/A'}</span></div>
+              <div style={metaRow}><span>Nominee Contact</span><span style={metaValue}>{loan.nomineeMobile || 'N/A'}</span></div>
+              <div style={metaRow}><span>Aadhaar Number</span><span style={metaValue}>{maskIdentityString(loan.aadhaar)}</span></div>
+              <div style={metaRow}><span>Settlement Bank</span><span style={metaValue}>{loan.bankName || 'N/A'}</span></div>
+              <div style={metaRow}><span>Account Number</span><span style={metaValue}>{loan.accountNumber || 'N/A'}</span></div>
+              <div style={metaRow}><span>IFSC Code</span><span style={{ ...metaValue, textTransform: 'uppercase' }}>{loan.ifscCode || 'N/A'}</span></div>
+              <div style={metaRow}><span>Area Type</span><span style={metaValue}>{loan.areaType || 'N/A'}</span></div>
+              <div style={metaRow}><span>Residence Status</span><span style={metaValue}>{loan.residenceNature || 'N/A'}</span></div>
+              <div style={metaRow}><span>Structure Build</span><span style={metaValue}>{loan.houseType || 'N/A'}</span></div>
+              <div style={metaRow}><span>Years of Stay</span><span style={metaValue}>{loan.houseStay || '0'} Yrs</span></div>
+              <div style={metaRow}><span>Occupation</span><span style={metaValue}>{loan.memberOccupation || 'N/A'}</span></div>
+              <div style={metaRow}><span>Monthly Income</span><span style={metaValue}>₹{Number(loan.monthlyIncome || 0).toLocaleString('en-IN')}</span></div>
+              <div style={{ ...metaRow, border: 'none', paddingBottom: 0, marginBottom: 0 }}><span>Verified Location</span><span style={{ ...metaValue, fontSize: '10px', maxWidth: '200px', wordBreak: 'break-word', display: 'block' }}>{loan.locationName || 'N/A'}</span></div>
+            </div>
+
+            {/* EMI SCHEDULE MATRIX */}
+            <div style={metaHeadingStyle}><FiClock /> My EMI Amortization Schedule</div>
+            <div style={amortizationCalendarBox}>
+              {Array.from({ length: Number(loan.totalInstallments) || 1 }).map((_, idx) => {
+                const numberInst = idx + 1;
+                const emiVal = Number(loan.installmentAmount || 0);
+                const checkPaid = Number(loan.totalPaid || 0) >= (numberInst * emiVal);
+                
+                let emiDateObj = new Date(loan.appliedDate?.$date || loan.appliedDate || Date.now());
+                if (isNaN(emiDateObj.getTime())) emiDateObj = new Date();
+
+                if (loan.emiType === 'Weekly EMI') {
+                  emiDateObj.setDate(emiDateObj.getDate() + (numberInst * 7));
+                } else {
+                  emiDateObj.setDate(emiDateObj.getDate() + numberInst);
+                }
+
+                return (
+                  <div key={numberInst} style={calendarRow}>
+                    <span style={{ ...calendarIndexTag, background: checkPaid ? '#64748b' : '#2563eb' }}>Inst-{numberInst}</span>
+                    <div style={{ flex: 1, paddingLeft: '12px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '900', color: '#0f172a' }}>₹{emiVal.toLocaleString('en-IN')}</div>
+                      <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>📅 Due on: {emiDateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                    </div>
+                    <span style={checkPaid ? innerPaidBadgeStyle : innerDueBadgeStyle}>{checkPaid ? "✓ PAID" : "⏳ DUE"}</span>
                   </div>
-
-                  {/* 📅 GLOBAL OVERDUE CHECK BOX */}
-                  <div style={{ ...dueInfoBox, background: nextDate.includes('OVERDUE') ? '#fff5f5' : '#f0f7ff', borderColor: nextDate.includes('OVERDUE') ? '#feb2b2' : '#dbeafe' }}>
-                    <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
-                        <FiCalendar color={nextDate.includes('OVERDUE') ? '#dc2626' : '#3b82f6'} />
-                        <span style={{fontSize:'10px', fontWeight:'900', color: nextDate.includes('OVERDUE') ? '#9b1c1c' : '#64748b'}}>UPCOMING EMI DEADLINE</span>
-                    </div>
-                    <div style={{fontSize:'15px', fontWeight:'900', color: nextDate.includes('OVERDUE') ? '#dc2626' : '#0f172a', marginTop:'4px'}}>
-                        {nextDate}
-                    </div>
-                  </div>
-
-                  <div style={statsContainer}>
-                    <div style={statBox}>
-                      <label style={miniLabel}>EMI Amount</label>
-                      <b style={statVal}>₹{emiAmt.toLocaleString('en-IN')}</b>
-                    </div>
-                    <div style={statDivider}></div>
-                    <div style={statBox}>
-                      <label style={miniLabel}>Outstanding Balance</label>
-                      <b style={{...statVal, color: netRemaining <= 0 ? '#10b981' : '#f43f5e'}}>
-                        ₹{netRemaining <= 0 ? '0' : netRemaining.toFixed(0).toLocaleString('en-IN')}
-                      </b>
-                    </div>
-                  </div>
-
-                  <div style={inputGroup}>
-                    <label style={miniLabel}>Custom Amount to Pay (₹)</label>
-                    <input 
-                      type="number" 
-                      style={inputBox}
-                      value={inputAmt}
-                      onChange={(e) => setPayAmounts({...payAmounts, [loan._id]: e.target.value})}
-                    />
-                  </div>
-
-                  <button onClick={() => handlePay(loan)} style={mainPayBtn} className="hover-scale">
-                    Pay Custom Installment (₹{inputAmt})
-                  </button>
-
-                  <button 
-                    onClick={() => setActiveLedger(activeLedger === loan.loanId ? null : loan.loanId)} 
-                    style={scheduleToggle}
-                  >
-                    {activeLedger === loan.loanId ? <><FiChevronUp/> Close Calendar Sheet</> : <><FiClock/> View Detailed EMI Dates Schedule</>}
-                  </button>
-
-                  {/* =========================================================================
-                      🔥 DYNAMIC CALENDAR EMI SCHEDULE ENGINE (Shows explicit installment dates)
-                     ========================================================================= */}
-                  {activeLedger === loan.loanId && (
-                    <div style={ledgerWrapper} className="fade-in">
-                        <header style={ledgerHeader}>
-                            <FiInfo /> PERSONALIZED AMORTIZATION TIMELINE SHEET
-                        </header>
-                        
-                        <div style={ledgerScroll}>
-                            {Array.from({ length: totalInstallmentsCount }).map((_, index) => {
-                                const installmentNo = index + 1;
-                                
-                                // Calculate accurate sequence calendar date for each specific row item step
-                                const milestoneDate = new Date(loan.appliedDate || loan.updatedAt || Date.now());
-                                if (loan.emiType === 'Weekly EMI') {
-                                  milestoneDate.setDate(milestoneDate.getDate() + (installmentNo * 7));
-                                } else {
-                                  milestoneDate.setDate(milestoneDate.getDate() + installmentNo);
-                                }
-
-                                const formattedMilestoneDate = milestoneDate.toLocaleDateString('en-IN', {
-                                  day: '2-digit', month: 'short', year: 'numeric'
-                                });
-
-                                // 🔥 Math Engine Evaluation: If total global repaid satisfies up to this specific tier level
-                                const isThisRowSettled = totalRepaid >= (installmentNo * emiAmt);
-
-                                return (
-                                  <div key={installmentNo} style={{ ...ledgerRow, opacity: isThisRowSettled ? 0.6 : 1 }}>
-                                      <span style={{ ...periodLabel, background: isThisRowSettled ? '#1e293b' : '#2563eb' }}>
-                                        Inst-{installmentNo}
-                                      </span>
-                                      
-                                      <div style={{ flex: 1, marginLeft: '12px' }}>
-                                          <div style={rowAmt}>₹{emiAmt.toLocaleString('en-IN')}</div>
-                                          <div style={{ fontSize: '10px', color: isThisRowSettled ? '#94a3b8' : '#60a5fa', fontWeight: 'bold', marginTop: '2px' }}>
-                                              📅 Due on: {formattedMilestoneDate}
-                                          </div>
-                                      </div>
-
-                                      {isThisRowSettled ? (
-                                        <span style={innerPaidBadge}>✓ PAID</span>
-                                      ) : (
-                                        <button 
-                                          onClick={() => handlePay(loan, emiAmt)} 
-                                          style={payMiniBtn}
-                                        >
-                                          Pay
-                                        </button>
-                                      )}
-                                  </div>
-                                );
-                            })}
-                        </div>
-                        <footer style={penaltyBox}>
-                            <FiAlertCircle /> Late compliance settlement carries regular system structure guidelines buffer.
-                        </footer>
-                    </div>
-                  )}
-                </div>
-              );
-            }) : (
-                <div style={emptyCard}>No active disbursements found in master client ledger.</div>
-            )}
-          </div>
-
-          {/* --- TRANSACTION HISTORY --- */}
-          <div style={historyCard}>
-            <h3 style={tableHeading}><FiCheckCircle color="#10b981" /> Payment Intelligence History</h3>
-            <div style={{overflowX: 'auto'}}>
-                <table style={tableStyle}>
-                    <thead>
-                        <tr style={tableHead}>
-                            <th style={thStyle}>PAYMENT DATE</th>
-                            <th style={thStyle}>UTR / REFERENCE ID</th>
-                            <th style={thStyle}>AMOUNT</th>
-                            <th style={thStyle}>LEDGER STATUS</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {payments.length > 0 ? payments.map((p, index) => {
-                            const status = p.status?.toLowerCase();
-                            return (
-                                <tr key={index} style={trStyle}>
-                                    <td style={tdStyle}>
-                                        <div style={{fontWeight: '700', color: '#334155'}}>{new Date(p.createdAt).toLocaleDateString('en-IN')}</div>
-                                        <div style={{fontSize: '10px', color: '#94a3b8'}}>{new Date(p.createdAt).toLocaleTimeString()}</div>
-                                    </td>
-                                    <td style={{...tdStyle, fontFamily: 'monospace', color: '#6366f1', fontWeight: '800'}}>{p.utr}</td>
-                                    <td style={{...tdStyle, fontWeight: '900', fontSize:'15px', color: '#0f172a'}}>₹{Number(p.amount || 0).toLocaleString('en-IN')}</td>
-                                    <td style={tdStyle}>
-                                        <span style={statusBadge(
-                                            status === 'approved' ? '#dcfce7' : status === 'rejected' ? '#fee2e2' : '#fef3c7',
-                                            status === 'approved' ? '#166534' : status === 'rejected' ? '#991b1b' : '#92400e'
-                                        )}>
-                                            {p.status?.toUpperCase() || 'SYNCING'}
-                                        </span>
-                                    </td>
-                                </tr>
-                            );
-                        }) : (
-                            <tr><td colSpan="4" style={noData}>Secure vault empty. No verified payments found.</td></tr>
-                        )}
-                    </tbody>
-                </table>
+                );
+              })}
             </div>
           </div>
-        </>
-      )}
+        )) : (
+          <div style={emptySidebarPlaceholder}>No active loan profile found. Please apply for a loan to see your details.</div>
+        )}
+      </div>
 
-      {showModal && selectedLoan && (
-        <PaymentModal 
-          loan={selectedLoan} 
-          customAmount={selectedLoan.customAmount} 
-          onClose={() => setShowModal(false)} 
-          onRefresh={fetchData} 
-        />
-      )}
+      {/* =========================================================================
+          3️⃣ PRINT DOSSIER (Visible only during PDF Generation/Print)
+         ========================================================================= */}
+      <div className="print-dossier" style={{ display: 'none' }}>
+        
+        {/* PRAYAGRAJ HEADER */}
+        <div style={printHeaderContainer}>
+          <div style={{ textAlign: 'left' }}>
+            <h1 style={{ margin: '0 0 3px 0', fontWeight: '950', letterSpacing: '-1.5px', fontSize: '24px', color: '#0f172a' }}>D-FINANCE SOLUTIONS</h1>
+            <p style={{ margin: 0, fontSize: '11px', color: '#334155', fontWeight: '900', textTransform: 'uppercase' }}>Central Corporate Node: Prayagraj Branch, UP</p>
+            <p style={{ margin: '4px 0 0 0', fontSize: '10px', color: '#64748b', fontWeight: 'bold' }}>Official Customer Master Ledger & Statement</p>
+          </div>
+          <div style={{ textAlign: 'right', fontSize: '11px', fontWeight: 'bold', color: '#0f172a', lineHeight: '1.4' }}>
+            <div>Statement Generation Date: {new Date().toLocaleDateString('en-IN')}</div>
+            <div>Secure System Verification: Valid</div>
+          </div>
+        </div>
+
+        {loans.map((loan, index) => (
+          <div key={index} className="dossier-print-card-layout">
+            
+            {/* Header Profile */}
+            <div style={{ display: 'flex', gap: '20px', alignItems: 'center', borderBottom: '2px solid #000000', paddingBottom: '12px', marginBottom: '15px' }}>
+              <img 
+                src={loan.custLivePhoto || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"} 
+                alt="My KYC Photo" 
+                style={dossierPrintAvatar}
+                onError={(e) => { e.target.src = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"; }}
+              />
+              <div style={{ flex: 1 }}>
+                <h2 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: '950', textTransform: 'uppercase', color: '#000000' }}>
+                  {loan.customerName}
+                </h2>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 20px', fontSize: '10px', color: '#000000' }}>
+                  <div><strong>Aadhaar No:</strong> {maskIdentityString(loan.aadhaar)}</div>
+                  <div><strong>Nominee Name:</strong> {loan.nomineeName || 'N/A'}</div>
+                  <div><strong>Nominee Relation:</strong> {loan.nomineeRelation || 'N/A'}</div>
+                  <div><strong>Nominee Contact:</strong> {loan.nomineeMobile || 'N/A'}</div>
+                  <div><strong>Verified By (Officer):</strong> {loan.verifiedByName || 'System Node'}</div>
+                  <div><strong>Mobile Number:</strong> {loan.customerMobile || user?.mobile || 'N/A'}</div>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <span style={printIdBadge}>FILE ID: {loan.loanId}</span>
+                <div style={{ fontSize: '9px', marginTop: '6px', fontWeight: 'bold', textTransform: 'uppercase', color: '#000000' }}>
+                  Loan Status: {loan.status}
+                </div>
+              </div>
+            </div>
+
+            {/* Details Block */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '10px', fontSize: '10px', marginBottom: '15px', borderBottom: '1px dashed #000000', paddingBottom: '10px', color: '#000000' }}>
+              <div><strong>Demographics:</strong> {loan.areaType || 'N/A'}</div>
+              <div><strong>Residence:</strong> {loan.residenceNature || 'N/A'}</div>
+              <div><strong>Build Type:</strong> {loan.houseType || 'N/A'}</div>
+              <div><strong>Rooms:</strong> {loan.noOfRooms || 'N/A'}</div>
+              <div><strong>Members:</strong> {loan.noOfMembers || 'N/A'}</div>
+              <div><strong>Stay Years:</strong> {loan.houseStay || '0'} Yrs</div>
+              <div><strong>Earning Members:</strong> {loan.earningMembers || '0'}</div>
+              <div><strong>Occupation:</strong> {loan.memberOccupation || 'N/A'}</div>
+              <div><strong>Monthly Yield:</strong> ₹{Number(loan.monthlyIncome || 0).toLocaleString('en-IN')}</div>
+              <div><strong>Networth:</strong> ₹{Number(loan.networth || 0).toLocaleString('en-IN')}</div>
+              <div><strong>Livestock:</strong> {loan.cows || '0'}</div>
+              <div><strong>Water Source:</strong> {loan.drinkingWater || 'N/A'}</div>
+            </div>
+
+            {/* Bank Details */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', fontSize: '10px', marginBottom: '15px', borderBottom: '1px dashed #000000', paddingBottom: '10px', color: '#000000' }}>
+              <div><strong>Settlement Bank:</strong> {loan.bankName || 'N/A'}</div>
+              <div><strong>Account Number:</strong> {loan.accountNumber || 'N/A'}</div>
+              <div><strong>IFSC Branch Code:</strong> {String(loan.ifscCode).toUpperCase() || 'N/A'}</div>
+            </div>
+
+            <div style={{ fontSize: '9px', color: '#000000', marginBottom: '15px', background: '#f8fafc', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+              📍 <strong>Verified Geolocation Base:</strong> {loan.locationName || 'N/A'}
+            </div>
+
+            {/* Summary Block */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', padding: '10px 15px', border: '1px solid #000000', background: '#f8fafc', borderRadius: '8px', marginBottom: '20px' }}>
+              <div>
+                <span style={dossierMetaLabel}>Total Principal Value</span>
+                <div style={dossierMetaVal}>₹{Number(loan.amount || 0).toLocaleString('en-IN')}</div>
+              </div>
+              <div>
+                <span style={dossierMetaLabel}>Total Cleared EMIs</span>
+                <div style={dossierMetaVal}>₹{Number(loan.totalPaid || 0).toLocaleString('en-IN')}</div>
+              </div>
+              <div>
+                <span style={dossierMetaLabel}>Remaining Dues Liability</span>
+                <div style={dossierMetaVal}>₹{Number(loan.totalPending || 0).toLocaleString('en-IN')}</div>
+              </div>
+            </div>
+
+            {/* EMI SCHEDULE MATRIX (PRINT) */}
+            <div style={{ marginTop: '20px', pageBreakInside: 'auto' }}>
+              <h4 style={{ fontSize: '11px', fontWeight: '950', borderBottom: '1px solid #000000', paddingBottom: '4px', textTransform: 'uppercase', color: '#000000', letterSpacing: '0.3px' }}>
+                My Repayment Schedule
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '10px' }}>
+                {Array.from({ length: Number(loan.totalInstallments) || 1 }).map((_, idx) => {
+                  const instNo = idx + 1;
+                  const emiAmtVal = Number(loan.installmentAmount || 0);
+                  const isSettledRow = Number(loan.totalPaid || 0) >= (instNo * emiAmtVal);
+                  
+                  let emiDateObj = new Date(loan.appliedDate?.$date || loan.appliedDate || Date.now());
+                  if (isNaN(emiDateObj.getTime())) emiDateObj = new Date();
+
+                  if (loan.emiType === 'Weekly EMI') {
+                    emiDateObj.setDate(emiDateObj.getDate() + (instNo * 7));
+                  } else {
+                    emiDateObj.setDate(emiDateObj.getDate() + instNo);
+                  }
+
+                  return (
+                    <div key={instNo} style={{ border: '1px solid #000000', padding: '6px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff' }}>
+                      <div>
+                        <div style={{ fontWeight: '950', fontSize: '11px' }}>Inst {instNo}: ₹{emiAmtVal.toFixed(0)}</div>
+                        <div style={{ fontSize: '9px', fontWeight: 'bold' }}>📅 {emiDateObj.toLocaleDateString('en-IN')}</div>
+                      </div>
+                      <span style={{ fontWeight: '950', fontSize: '9px', color: '#000000' }}>
+                        {isSettledRow ? '[PAID]' : '[DUE]'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* SIGNATURE BLOCKS */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '50px', paddingTop: '15px', borderTop: '1px dashed #000000', pageBreakInside: 'avoid' }}>
+              <div style={{ textAlign: 'center', width: '30%' }}>
+                <div style={{ borderBottom: '1px solid #000000', width: '85%', margin: '0 auto 6px auto', height: '35px' }}></div>
+                <span style={{ fontSize: '9px', fontWeight: '950', textTransform: 'uppercase', color: '#000000' }}>Client Signature (Me)</span>
+              </div>
+              <div style={{ textAlign: 'center', width: '30%' }}>
+                <div style={{ borderBottom: '1px solid #000000', width: '85%', margin: '0 auto 6px auto', height: '35px' }}></div>
+                <span style={{ fontSize: '9px', fontWeight: '950', textTransform: 'uppercase', color: '#000000' }}>Field Advisor</span>
+              </div>
+              <div style={{ textAlign: 'center', width: '30%' }}>
+                <div style={{ borderBottom: '1px solid #000000', width: '85%', margin: '0 auto 6px auto', height: '35px' }}></div>
+                <span style={{ fontSize: '9px', fontWeight: '950', textTransform: 'uppercase', color: '#000000' }}>Branch Manager</span>
+              </div>
+            </div>
+
+            {/* IMAGE EVIDENCE VAULT */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '15px', marginTop: '25px', pageBreakInside: 'avoid' }}>
+              {loan.passbookPic && (
+                <div>
+                  <span style={dossierMetaLabel}>My Passbook/Cheque Proof</span>
+                  <img src={loan.passbookPic} alt="Passbook Evidence" style={{ width: '100%', maxHeight: '75px', objectFit: 'contain', border: '1px solid #000' }} />
+                </div>
+              )}
+              {loan.custAadhaarBack ? (
+                <div>
+                  <span style={dossierMetaLabel}>Aadhaar Back Attachment</span>
+                  <img src={loan.custAadhaarBack} alt="Aadhaar Back" style={{ width: '100%', maxHeight: '75px', objectFit: 'contain', border: '1px solid #000' }} />
+                </div>
+              ) : null}
+              {loan.custAadhaarFront ? (
+                <div>
+                  <span style={dossierMetaLabel}>Aadhaar Front Check</span>
+                  <img src={loan.custAadhaarFront} alt="Aadhaar Front" style={{ width: '100%', maxHeight: '75px', objectFit: 'contain', border: '1px solid #000' }} />
+                </div>
+              ) : null}
+              {loan.nomineePic ? (
+                <div>
+                  <span style={dossierMetaLabel}>Nominee Verification Asset</span>
+                  <img src={loan.nomineePic} alt="Nominee Photo" style={{ width: '100%', maxHeight: '75px', objectFit: 'contain', border: '1px solid #000' }} />
+                </div>
+              ) : null}
+            </div>
+
+          </div>
+        ))}
+      </div>
+
     </div>
   );
 };
 
-// --- CORE COMPONENT VISUAL EMBEDDED STYLES ---
-const masterPageStyle = { padding: '30px 4%', background: '#f8fafc', minHeight: '100vh', fontFamily: '"Plus Jakarta Sans", sans-serif' };
-const headerSection = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' };
-const titleStyles = { margin: 0, fontWeight: 950, fontSize: '26px', color: '#0f172a', letterSpacing: '-1px' };
+// =========================================================================
+// STYLING MAP HOOKS Blueprints
+// =========================================================================
+const masterPageStyle = { padding: '20px 3%', background: '#f8fafc', minHeight: '100vh', fontFamily: '"Plus Jakarta Sans", sans-serif' };
+const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', gap: '15px', flexWrap: 'wrap' };
+const titleStyles = { margin: 0, fontWeight: 950, fontSize: '24px', color: '#0f172a', letterSpacing: '-1px' };
 const subStyles = { margin: '4px 0 0 0', color: '#64748b', fontSize: '13px', fontWeight: '600' };
-const syncBtn = { background: '#0f172a', color: '#fff', border: 'none', padding: '12px 22px', borderRadius: '14px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' };
 
-const gridStyles = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '25px', marginBottom: '40px' };
-const cardStyles = { background: '#fff', padding: '25px', borderRadius: '32px', border: '1px solid #eef2f6', boxShadow: '0 15px 35px rgba(0,0,0,0.01)', position: 'relative' };
-const cardHeader = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' };
-const loanIdTag = { fontSize: '10px', fontWeight: '900', color: '#2563eb', background: '#eff6ff', padding: '5px 12px', borderRadius: '8px' };
-const liveBadge = { fontSize: '9px', fontWeight: '900', color: '#10b981', trackingSpace: '0.5px' };
+const refreshBtn = { background: '#fff', border: '2px solid #e2e8f0', padding: '10px 18px', borderRadius: '12px', fontSize: '12px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#475569' };
+const printSummaryBtn = { background: '#2563eb', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '12px', fontSize: '12px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 8px 15px rgba(37, 99, 235, 0.2)' };
 
-const dueInfoBox = { padding: '12px 18px', borderRadius: '18px', border: '1px solid #dbeafe', marginBottom: '18px', transition: 'all 0.3s' };
-const statsContainer = { display: 'flex', background: '#f8fafc', padding: '15px 18px', borderRadius: '20px', marginBottom: '20px', border: '1px solid #f1f5f9', alignItems: 'center' };
-const statBox = { flex: 1, textAlign: 'center' };
-const statDivider = { width: '1px', height: '25px', background: '#e2e8f0' };
-const miniLabel = { fontSize: '9px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px', display: 'block', letterSpacing: '0.3px' };
-const statVal = { fontSize: '18px', fontWeight: 950, color: '#0f172a' };
+const profileCardPane = { background: '#fff', border: '1px solid #eef2f6', borderRadius: '24px', padding: '25px', boxSizing: 'border-box', marginTop: '15px', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', maxWidth: '900px', margin: '0 auto' };
+const profileHeader = { display: 'flex', alignItems: 'center', gap: '15px', borderBottom: '1px solid #f1f5f9', paddingBottom: '18px', marginBottom: '18px' };
+const sidebarAvatarStyle = { width: '65px', height: '65px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #f8fafc', boxShadow: '0 8px 16px rgba(0,0,0,0.05)' };
+const customerNameStyle = { margin: 0, fontSize: '18px', fontWeight: '950', color: '#0f172a', textTransform: 'uppercase' };
+const miniFileIdBadge = { background: '#0f172a', color: '#fff', fontSize: '9px', fontWeight: '900', padding: '4px 10px', borderRadius: '6px', display: 'inline-block', marginTop: '6px' };
 
-const inputGroup = { marginBottom: '15px' };
-const inputBox = { width: '100%', padding: '14px', borderRadius: '16px', border: '2px solid #e2e8f0', fontSize: '18px', fontWeight: '900', textAlign: 'center', outline: 'none', background: '#f8fafc', boxSizing: 'border-box' };
-const mainPayBtn = { width: '100%', padding: '16px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '18px', fontWeight: '900', cursor: 'pointer', fontSize: '14px', boxShadow: '0 8px 20px rgba(16, 185, 129, 0.15)' };
-const scheduleToggle = { width: '100%', background: 'none', border: 'none', marginTop: '12px', color: '#64748b', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' };
+const ledgerBreakdownContainer = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', background: '#f8fafc', border: '1px solid #eef2f6', padding: '18px', borderRadius: '18px', marginBottom: '25px' };
+const ledgerMiniCard = { display: 'flex', flexDirection: 'column', gap: '6px' };
 
-const ledgerWrapper = { marginTop: '20px', background: '#1e293b', borderRadius: '24px', padding: '18px', color: '#fff' };
-const ledgerHeader = { fontSize: '9px', fontWeight: '900', color: '#94a3b8', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px', letterSpacing: '0.5px' };
-const ledgerScroll = { maxHeight: '220px', overflowY: 'auto', paddingRight: '4px' };
-const ledgerRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #334155' };
-const periodLabel = { padding: '4px 10px', borderRadius: '6px', fontSize: '9px', fontWeight: '900', color: '#fff' };
-const rowAmt = { fontSize: '13px', fontWeight: '900', color: '#fff' };
-const payMiniBtn = { background: '#fff', color: '#0f172a', border: 'none', padding: '5px 12px', borderRadius: '8px', fontSize: '10px', fontWeight: '900', cursor: 'pointer' };
-const innerPaidBadge = { background: '#065f46', color: '#34d399', fontSize: '9px', fontWeight: '900', padding: '4px 10px', borderRadius: '6px' };
-const penaltyBox = { marginTop: '12px', fontSize: '10px', color: '#f87171', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '5px' };
+const metaHeadingStyle = { display: 'flex', alignItems: 'center', gap: '8px', margin: '25px 0 12px 0', fontSize: '13px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase' };
+const metaMetricsBlock = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px', background: '#fff', borderRadius: '16px', padding: '20px', border: '1px solid #eef2f6' };
+const metaRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f8fafc', paddingBottom: '8px', fontSize: '12px' };
+const metaLabel = { color: '#64748b', fontWeight: 'bold' };
+const metaValue = { color: '#0f172a', fontWeight: '900', textAlign: 'right' };
 
-const historyCard = { background: '#fff', borderRadius: '32px', padding: '30px', border: '1px solid #eef2f6', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' };
-const tableHeading = { marginBottom: '20px', fontSize: '16px', fontWeight: '950', display: 'flex', alignItems: 'center', gap: '8px', color: '#0f172a', textTransform: 'uppercase' };
-const tableStyle = { width: '100%', borderCollapse: 'collapse' };
-const tableHead = { textAlign: 'left', borderBottom: '2px solid #f1f5f9' };
-const thStyle = { padding: '12px 10px', color: '#94a3b8', fontSize: '10px', fontWeight: '900', textTransform: 'uppercase' };
-const trStyle = { borderBottom: '1px solid #f8fafc' };
-const tdStyle = { padding: '16px 10px', fontSize: '13px' };
-const statusBadge = (bg, color) => ({ background: bg, color: color, padding: '5px 10px', borderRadius: '8px', fontSize: '9px', fontWeight: '900' });
+const amortizationCalendarBox = { maxHeight: '350px', overflowY: 'auto', background: '#fff', borderRadius: '20px', border: '1px solid #eef2f6', padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px' };
+const calendarRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' };
+const calendarIndexTag = { color: '#fff', fontSize: '10px', fontWeight: '900', padding: '4px 10px', borderRadius: '6px' };
+const innerPaidBadgeStyle = { background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: '900', padding: '4px 10px', borderRadius: '6px' };
+const innerDueBadgeStyle = { background: '#fef3c7', color: '#b45309', fontSize: '10px', fontWeight: '900', padding: '4px 10px', borderRadius: '6px' };
 
-const loaderBox = { padding: '120px 0', textAlign: 'center', color: '#94a3b8', fontWeight: '800' };
-const emptyCard = { gridColumn: '1/-1', textAlign: 'center', padding: '50px', background: '#fff', borderRadius: '24px', color: '#cbd5e1', fontWeight: '800', fontSize: '13px' };
-const noData = { textAlign: 'center', padding: '35px', color: '#cbd5e1', fontWeight: '800', fontSize: '13px' };
+const emptySidebarPlaceholder = { textAlign: 'center', padding: '80px 20px', background: '#fff', border: '2px dashed #cbd5e1', borderRadius: '24px', fontSize: '14px', fontWeight: 'bold', color: '#94a3b8' };
+const loaderStyle = { textAlign: 'center', marginTop: '160px', fontWeight: '950', color: '#0f172a', fontSize: '14px' };
 
-const animations = `
-  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-  .card-hover { transition: all 0.3s ease; }
-  .card-hover:hover { transform: translateY(-4px); box-shadow: 0 25px 50px rgba(0,0,0,0.04); }
-  .hover-scale:active { transform: scale(0.98); }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-  .fade-in { animation: fadeIn 0.4s ease-out; }
-  .spinner { width: 28px; height: 28px; border: 3.5px solid #e2e8f0; border-top: 3.5px solid #0f172a; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
-  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-  @media (max-width: 768px) {
-    .mobile-header { flex-direction: column; gap: 15px; align-items: flex-start !important; }
-    .loan-grid { grid-template-columns: 1fr !important; }
-  }
-`;
+const printHeaderContainer = { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #000000', paddingBottom: '15px', marginBottom: '20px' };
+const printIdBadge = { border: '1px solid #000', color: '#000', fontWeight: '900', fontSize: '10px', padding: '3px 8px' };
+const dossierPrintAvatar = { width: '55px', height: '55px', objectFit: 'cover', border: '1px solid #000' };
+const dossierMetaLabel = { fontSize: '8px', textTransform: 'uppercase', fontWeight: '900', color: '#000', display: 'block', marginBottom: '2px' };
+const dossierMetaVal = { fontSize: '14px', fontWeight: '950', color: '#000' };
 
-export default EMIPayments;
+export default CustomerReport;
