@@ -2,6 +2,8 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 
 // --- NEW LANDING PAGE ---
+import AboutUs from '../pages/AboutUs';
+import ContactUs from '../pages/ContactUs';
 import LandingPage from '../pages/LandingPage'; 
 
 // Layouts
@@ -61,6 +63,8 @@ const AppRoutes = () => {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/blogs" element={<BlogsPage />} />
+      <Route path="/about" element={<AboutUs />} />
+      <Route path="/contact" element={<ContactUs />} />
 
       {/* 3. Admin Routes (Mathura Branch Control) */}
       <Route path="/admin" element={<AdminLayout />}>

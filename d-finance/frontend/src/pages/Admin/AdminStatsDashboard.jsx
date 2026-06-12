@@ -3,7 +3,7 @@ import API from '../../api/axios';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { FiTrash2, FiUser, FiShield, FiBriefcase, FiUsers, FiFilter } from 'react-icons/fi';
 
-// Components (Ensure paths are correct)
+// Components
 import ManageBlogs from './ManageBlogs';
 import DailyCollectionReport from './DailyCollectionReport';
 import BulkDataRetrieval from './BulkDataRetrieval';
@@ -26,32 +26,57 @@ const AdminStatsDashboard = () => {
         API.get('/admin/stats').catch(() => ({ data: {} })),
         API.get('/admin/all-loans').catch(() => ({ data: [] })),
         API.get('/admin/all-customers').catch(() => ({ data: [] })),
-        API.get('/admin/all-staff').catch(() => ({ data: [] })) // 🚀 Staff Route
+        API.get('/admin/all-staff').catch(() => ({ data: [] }))
       ]);
+
+      const loansData = Array.isArray(loansRes.data) ? loansRes.data : [];
+      
+      // 🔥 CLIENT-SIDE SEPARATION ENGINE: Dono lists ko combine karke accurate roles par sorting
+      const rawCustomers = Array.isArray(custRes.data) ? custRes.data : [];
+      const rawStaff = Array.isArray(staffRes.data) ? staffRes.data : [];
+      const combinedUsers = [...rawCustomers, ...rawStaff];
+
+      // Remove duplicates if any overlap occurs across endpoints
+      const uniqueUsers = Array.from(new Map(combinedUsers.map(u => [u._id, u])).values());
+
+      // Staff roles list
+      const staffRoles = ['admin', 'accountant', 'officer', 'field officer', 'fieldofficer', 'advisor'];
+
+      // Filtering exact staff members
+      const filteredStaff = uniqueUsers.filter(u => 
+        u.role && staffRoles.includes(u.role.toLowerCase().trim())
+      );
+
+      // Filtering exact customers (anyone who is not an internal staff role)
+      const filteredCustomers = uniqueUsers.filter(u => 
+        !u.role || !staffRoles.includes(u.role.toLowerCase().trim())
+      );
 
       // Extract UTR Pending Payments
       const pending = [];
-      if (Array.isArray(loansRes.data)) {
-        loansRes.data.forEach(loan => {
-          loan.repaymentHistory?.forEach(pay => {
-            if (pay.status === 'Pending') {
-              pending.push({ ...pay, loanId: loan.loanId, customerName: loan.customerName });
-            }
-          });
+      loansData.forEach(loan => {
+        loan.repaymentHistory?.forEach(pay => {
+          if (pay.status === 'Pending') {
+            pending.push({ ...pay, loanId: loan.loanId, customerName: loan.customerName });
+          }
         });
-      }
+      });
+
+      // ABSOLUTE LIVE STATS ENGINE
+      const liveDisbursed = loansData.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+      const liveRecovered = loansData.reduce((acc, curr) => acc + (curr.totalPaid || 0), 0);
 
       setData({
-        loans: Array.isArray(loansRes.data) ? loansRes.data : [],
-        customers: Array.isArray(custRes.data) ? custRes.data : [],
+        loans: loansData,
+        customers: filteredCustomers,
         pendingPayments: pending,
-        staff: Array.isArray(staffRes.data) ? staffRes.data : []
+        staff: filteredStaff
       });
 
       setStats({
-        totalDisbursed: statsRes.data?.totalDisbursed || 0,
-        totalRecovered: statsRes.data?.totalRecovered || 0,
-        customerCount: custRes.data?.length || 0
+        totalDisbursed: liveDisbursed || statsRes.data?.totalDisbursed || 0,
+        totalRecovered: liveRecovered || statsRes.data?.totalRecovered || 0,
+        customerCount: filteredCustomers.length
       });
 
     } catch (err) {
@@ -70,8 +95,8 @@ const AdminStatsDashboard = () => {
   const handleApprovePayment = async (loanId, paymentId) => {
     if (!window.confirm("Verify UTR and mark this EMI as PAID?")) return;
     try {
-      const res = await API.post('/admin/approve-payment', { loanId, paymentId });
-      if (res.data.success) {
+      const res = await API.post(`/admin/approve-payment/${paymentId}`, { loanId });
+      if (res.data.success || res.status === 200) {
         alert("✅ Approved!");
         fetchAllAdminData();
       }
@@ -94,9 +119,9 @@ const AdminStatsDashboard = () => {
   // --- Graph Helpers ---
   const disbursed = stats.totalDisbursed || 0;
   const recovered = stats.totalRecovered || 0;
-  const pending = disbursed - recovered > 0 ? disbursed - recovered : 0;
+  const pendingAmount = disbursed - recovered > 0 ? disbursed - recovered : 0;
   const barData = [{ name: 'Disbursed', amount: disbursed }, { name: 'Recovered', amount: recovered }];
-  const pieData = [{ name: 'Recovered', value: recovered }, { name: 'Pending', value: pending }];
+  const pieData = [{ name: 'Recovered', value: recovered }, { name: 'Pending', value: pendingAmount }];
   const COLORS = ['#22c55e', '#ef4444'];
 
   if (loading) return <div style={loaderStyle}>INITIALIZING D-FINANCE ADMIN ATLAS...</div>;
@@ -106,7 +131,7 @@ const AdminStatsDashboard = () => {
     <div style={{ padding: '20px', background: '#f8fafc', minHeight: '100vh', maxWidth: '1400px', margin: '0 auto' }}>
       
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-        <h2 style={{ color: '#0f172a', fontWeight: '900', margin: 0, textTransform: 'uppercase', letterSpacing: '-1px' }}>📊 Mathura Branch Control</h2>
+        <h2 style={{ color: '#0f172a', fontWeight: '900', margin: 0, textTransform: 'uppercase', letterSpacing: '-1px' }}>📊 Prayagraj Branch Control</h2>
         <button onClick={fetchAllAdminData} style={refreshBtn}>🔄 Refresh Data</button>
       </div>
 
@@ -152,7 +177,7 @@ const AdminStatsDashboard = () => {
           <button onClick={() => setActiveTab('payments')} style={activeTab === 'payments' ? activeTabBtn : tabBtn}>UTR Queue ({data.pendingPayments.length})</button>
           <button onClick={() => setActiveTab('team')} style={activeTab === 'team' ? activeTabBtn : tabBtn}>👥 Staff Team</button>
           <button onClick={() => setActiveTab('customers')} style={activeTab === 'customers' ? activeTabBtn : tabBtn}>Customers</button>
-          <button onClick={() => setActiveTab('loans')} style={activeTab === 'loans' ? activeTabBtn : tabBtn}>All Loans</button>
+          <button onClick={{ }} onClick={() => setActiveTab('loans')} style={activeTab === 'loans' ? activeTabBtn : tabBtn}>All Loans</button>
           <button onClick={() => setActiveTab('collection')} style={activeTab === 'collection' ? activeTabBtn : tabBtn}>📊 Reports</button>
           <button onClick={() => setActiveTab('audit')} style={activeTab === 'audit' ? activeTabBtn : tabBtn}>📥 Audit</button>
           <button onClick={() => setActiveTab('insights')} style={activeTab === 'insights' ? activeTabBtn : tabBtn}>📢 Insights</button>
@@ -169,7 +194,7 @@ const AdminStatsDashboard = () => {
                   <div key={member._id} style={staffCard}>
                     <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
                         <div style={roleIcon(member.role)}>
-                            {member.role === 'admin' ? <FiShield/> : member.role === 'accountant' ? <FiBriefcase/> : <FiUser/>}
+                            {member.role?.toLowerCase() === 'admin' ? <FiShield/> : member.role?.toLowerCase() === 'accountant' ? <FiBriefcase/> : <FiUser/>}
                         </div>
                         <button onClick={() => handleDeleteUser(member._id, member.fullName)} style={deleteBtn}><FiTrash2/></button>
                     </div>
@@ -180,11 +205,14 @@ const AdminStatsDashboard = () => {
                     </div>
                   </div>
                 ))}
+                {data.staff.length === 0 && (
+                  <div style={{gridColumn: '1/-1'}}><div style={emptyMsg}>No active staff members registered</div></div>
+                )}
               </div>
             </div>
           )}
 
-          {/* CUSTOMER MANAGEMENT TAB (FIXED) */}
+          {/* CUSTOMER MANAGEMENT TAB */}
           {activeTab === 'customers' && (
             <div style={{ overflowX: 'auto', padding: '10px' }}>
               <table style={tableStyle}>
@@ -228,6 +256,9 @@ const AdminStatsDashboard = () => {
                       <td style={{ textAlign: 'right' }}><button onClick={() => handleApprovePayment(p.loanId, p._id)} style={approveBtn}>Approve</button></td>
                     </tr>
                   ))}
+                  {data.pendingPayments.length === 0 && (
+                    <tr><td colSpan="4" style={emptyMsg}>No pending UTR verifications in pipeline</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -238,22 +269,58 @@ const AdminStatsDashboard = () => {
           {activeTab === 'insights' && <div style={{padding: '20px'}}><ManageBlogs /></div>}
 
           {activeTab === 'loans' && (
-             <div style={{ overflowX: 'auto' }}>
-                <table style={tableStyle}>
-                    <thead><tr style={tableHeader}><th>ID</th><th>CLIENT</th><th>AMT</th><th>STATUS</th></tr></thead>
-                    <tbody>
-                        {data.loans.map(loan => (
-                            <tr key={loan._id} style={tableRow}>
-                                <td style={{fontWeight: 'bold'}}>{loan.loanId}</td>
-                                <td>{loan.customerName}</td>
-                                <td style={{fontWeight: 'bold'}}>₹{loan.amount}</td>
-                                <td><span style={statusBadge(loan.status)}>{loan.status}</span></td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-             </div>
-          )}
+  <div style={{ overflowX: 'auto', padding: '10px' }}>
+    <table style={tableStyle}>
+      <thead>
+        <tr style={tableHeader}>
+          <th style={{ padding: '12px' }}>SANCTION DATE</th>
+          <th style={{ padding: '12px' }}>LOAN ID</th>
+          <th style={{ padding: '12px' }}>CLIENT NAME</th>
+          <th style={{ padding: '12px' }}>MOBILE</th>
+          <th style={{ padding: '12px' }}>PRINCIPAL</th>
+          <th style={{ padding: '12px' }}>TOTAL PAID</th>
+          <th style={{ padding: '12px' }}>PENDING BAL</th>
+          <th style={{ padding: '12px' }}>STATUS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.loans.length > 0 ? data.loans.map(loan => {
+          // Cross-reference deep mapping for client contact links
+          const clientMobile = loan.customerMobile || loan.customerId?.mobile || '---';
+          
+          return (
+            <tr key={loan._id} style={tableRow}>
+              <td style={{ padding: '12px', color: '#64748b', fontWeight: '600' }}>
+                {new Date(loan.createdAt).toLocaleDateString('en-IN')}
+              </td>
+              <td style={{ padding: '12px', fontWeight: '900', color: '#0f172a' }}>{loan.loanId}</td>
+              <td style={{ padding: '12px', fontWeight: 'bold', textTransform: 'uppercase', color: '#334155' }}>
+                {loan.customerName}
+              </td>
+              <td style={{ padding: '12px', fontWeight: 'bold', color: '#475569' }}>{clientMobile}</td>
+              <td style={{ padding: '12px', fontWeight: '900', color: '#1e293b' }}>
+                ₹{Number(loan.amount || 0).toLocaleString('en-IN')}
+              </td>
+              <td style={{ padding: '12px', fontWeight: '900', color: '#16a34a' }}>
+                ₹{Number(loan.totalPaid || 0).toLocaleString('en-IN')}
+              </td>
+              <td style={{ padding: '12px', fontWeight: '900', color: '#dc2626' }}>
+                ₹{Number(loan.totalPending || 0).toLocaleString('en-IN')}
+              </td>
+              <td style={{ padding: '12px' }}>
+                <span style={statusBadge(loan.status)}>{loan.status}</span>
+              </td>
+            </tr>
+          );
+        }) : (
+          <tr>
+            <td colSpan="8" style={emptyMsg}>No loan records found in system registries</td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+)}
         </div>
       </div>
     </div>
@@ -273,14 +340,14 @@ const tabBtn = { padding: '10px 18px', background: '#e2e8f0', border: 'none', bo
 const activeTabBtn = { ...tabBtn, background: '#0f172a', color: '#fff' };
 const tableCard = { background: '#fff', borderRadius: '32px', border: '1px solid #f1f5f9', minHeight: '400px', padding: '10px' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse' };
-const tableHeader = { textAlign: 'left', background: '#f8fafc', color: '#94a3b8', fontSize: '9px', fontWeight: '900' };
+const tableHeader = { textAlign: 'left', background: '#f8fafc', color: '#94a3b8', fontSize: '9px', fontWeight: '900', padding: '12px' };
 const tableRow = { borderBottom: '1px solid #f1f5f9', fontSize: '12px' };
 const approveBtn = { background: '#0f172a', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: '900', cursor: 'pointer' };
 const deleteBtn = { background: '#fef2f2', color: '#ef4444', border: 'none', padding: '8px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center' };
 const staffCard = { background: '#f8fafc', padding: '20px', borderRadius: '25px', border: '1px solid #e2e8f0' };
 const roleIcon = (role) => ({
-    background: role === 'admin' ? '#fee2e2' : role === 'accountant' ? '#dbeafe' : '#dcfce7',
-    color: role === 'admin' ? '#ef4444' : role === 'accountant' ? '#2563eb' : '#059669',
+    background: role?.toLowerCase() === 'admin' ? '#fee2e2' : role?.toLowerCase() === 'accountant' ? '#dbeafe' : '#dcfce7',
+    color: role?.toLowerCase() === 'admin' ? '#ef4444' : role?.toLowerCase() === 'accountant' ? '#2563eb' : '#059669',
     padding: '10px', borderRadius: '12px', display: 'flex'
 });
 const refreshBtn = { background: '#fff', border: '1px solid #e2e8f0', padding: '8px 15px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' };

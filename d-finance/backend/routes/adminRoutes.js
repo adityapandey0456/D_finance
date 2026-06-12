@@ -30,12 +30,12 @@ const allowRoles = (...allowedRoles) => {
 };
 
 // =====================================
-// DASHBOARD STATS (Allowed for Admin, Accountant, Officer, Advisor & User)
+// DASHBOARD STATS
 // =====================================
 router.get("/stats", verifyToken, allowRoles("admin", "accountant", "officer", "field officer", "fieldofficer", "advisor", "user"), async (req, res) => {
   try {
     const loans = await Loan.find();
-    const customerCount = await User.countDocuments({ role: "user" });
+    const customerCount = await User.countDocuments({ role: { $in: ["user", "customer", "Customer", "User"] } });
 
     const totalDisbursed = loans.reduce((acc, curr) => acc + (curr.amount || 0), 0);
     let totalRecovered = 0;
@@ -55,7 +55,7 @@ router.get("/stats", verifyToken, allowRoles("admin", "accountant", "officer", "
 });
 
 // =====================================
-// PAYMENT VERIFICATION (Allowed for Admin & Accountant)
+// PAYMENT VERIFICATION
 // =====================================
 router.get("/pending-payments", verifyToken, allowRoles("admin", "accountant"), async (req, res) => {
   try {
@@ -70,11 +70,66 @@ router.post("/approve-payment/:id", verifyToken, allowRoles("admin", "accountant
 router.delete("/reject-payment/:id", verifyToken, allowRoles("admin", "accountant"), loanController.rejectPayment);
 
 // =====================================
-// CUSTOMER MANAGEMENT (Allowed for Admin, Accountant, Officer, Advisor & User)
+// APPROVE DIRECT REPAYMENT
+// =====================================
+router.post("/approve-direct-repayment", verifyToken, allowRoles("admin", "accountant", "officer", "field officer", "fieldofficer", "advisor", "user"), async (req, res) => {
+  try {
+    const { loanId, amount, remarks } = req.body;
+
+    const loan = await Loan.findOne({ loanId });
+    if (!loan) {
+      return res.status(404).json({ message: "Active loan reference not found in core infrastructure." });
+    }
+
+    const transactionAmount = Number(amount);
+
+    const payment = await Payment.create({
+      loanId: loan.loanId,
+      customerId: loan.customerId,
+      customerName: loan.customerName,
+      amount: transactionAmount,
+      status: "Approved",
+      paymentMethod: "Manual QR", 
+      gateway: "Manual",
+      verifiedAt: new Date(),
+      verifiedBy: req.user?.id || "System Advisor",
+      remarks: remarks || "Direct Repayment Authorized by Advisor/Officer Panel"
+    });
+
+    await Loan.findOneAndUpdate(
+      { loanId: loan.loanId },
+      {
+        $inc: { totalPaid: transactionAmount, totalPending: -transactionAmount },
+        $push: {
+          repaymentHistory: {
+            amount: transactionAmount,
+            utr: payment.paymentId,
+            status: "Approved",
+            date: new Date()
+          }
+        }
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Direct collection repayment authorized and synced with master ledger balances.",
+      paymentId: payment.paymentId
+    });
+
+  } catch (err) {
+    console.error("🚨 Direct Repayment Engine Exception:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================================
+// CUSTOMER MANAGEMENT (🔥 ROLE FILTER FIXED)
 // =====================================
 router.get("/all-customers", verifyToken, allowRoles("admin", "accountant", "officer", "field officer", "fieldofficer", "advisor", "user"), async (req, res) => {
   try {
-    const customers = await User.find({ role: "user" }).select("-password").sort({ createdAt: -1 });
+    // Looks up both 'user' and 'customer' variations seamlessly
+    const customers = await User.find({ role: { $in: ["user", "customer", "Customer", "User"] } }).select("-password").sort({ createdAt: -1 });
     res.json(customers);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -82,7 +137,7 @@ router.get("/all-customers", verifyToken, allowRoles("admin", "accountant", "off
 });
 
 // =====================================
-// STAFF MANAGEMENT (Allowed for Admin & Accountant)
+// STAFF MANAGEMENT
 // =====================================
 router.get("/all-staff", verifyToken, allowRoles("admin", "accountant"), async (req, res) => {
   try {
@@ -94,11 +149,11 @@ router.get("/all-staff", verifyToken, allowRoles("admin", "accountant"), async (
 });
 
 // =====================================
-// LOAN MANAGEMENT (Allowed for Admin, Accountant, Officer, Advisor & User)
+// LOAN MANAGEMENT
 // =====================================
 router.get("/all-loans", verifyToken, allowRoles("admin", "accountant", "officer", "field officer", "fieldofficer", "advisor", "user"), async (req, res) => {
   try {
-    const loans = await Loan.find().sort({ createdAt: -1 });
+    const loans = await Loan.find().populate("customerId", "-password").sort({ createdAt: -1 });
     res.json(loans);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -106,9 +161,9 @@ router.get("/all-loans", verifyToken, allowRoles("admin", "accountant", "officer
 });
 
 // =====================================
-// DAILY COLLECTION REPORT (Allowed for Admin & Accountant)
+// DAILY COLLECTION REPORT
 // =====================================
-router.get("/collection-report", verifyToken, allowRoles("admin", "accountant"), async (req, res) => {
+router.get("/collection-report", verifyToken, allowRoles("admin", "accountant", "officer", "field officer", "fieldofficer", "advisor", "user"), async (req, res) => {
   try {
     const today = new Date().setHours(0, 0, 0, 0);
     const loans = await Loan.find();
@@ -136,7 +191,7 @@ router.get("/collection-report", verifyToken, allowRoles("admin", "accountant"),
 });
 
 // =====================================
-// USER DELETE (🛡️ Strictly Locked to Admin Only)
+// USER DELETE
 // =====================================
 router.delete("/users/:id", verifyToken, allowRoles("admin"), async (req, res) => {
   try {

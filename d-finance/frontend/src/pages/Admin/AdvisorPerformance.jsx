@@ -120,7 +120,7 @@ const DailyCollectionReport = () => {
     if (markingId) return;
 
     const confirmPayment = window.confirm(
-      `Collect standard installment of ₹${loan.installmentAmount} from ${loan.customerName}?`
+      `Log Todo Collection entry of ₹${loan.installmentAmount} for ${loan.customerName}? (This is a structural record checkoff)`
     );
 
     if (!confirmPayment) return;
@@ -128,17 +128,18 @@ const DailyCollectionReport = () => {
     try {
       setMarkingId(loan._id);
 
+      // Backend par direct repayment hit karega jo sirf record save karega, calculation nahi
       const response = await API.post(
         '/admin/approve-direct-repayment',
         {
           loanId: loan.loanId,
           amount: loan.installmentAmount,
-          utr: `WEEK_TODO_CASH_${Date.now()}`,
+          remarks: "Daily Target Checked off via Terminal UI Panel"
         }
       );
 
       if (response.data.success) {
-        alert('🎉 EMI Balance Collected & Logs Refreshed!');
+        alert('🎉 Daily Target Checklist Status Updated!');
         fetchReport();
       }
     } catch (err) {
@@ -152,7 +153,6 @@ const DailyCollectionReport = () => {
   const getCountForDay = (dayName) => {
     return allLoansData.filter((loan) => {
       if (loan.status !== 'Disbursed') return false;
-
       if (loan.emiType === 'Daily EMI') return true;
 
       if (loan.emiType === 'Weekly EMI') {
@@ -164,7 +164,6 @@ const DailyCollectionReport = () => {
 
         return appliedDay === dayName;
       }
-
       return false;
     }).length;
   };
@@ -175,7 +174,6 @@ const DailyCollectionReport = () => {
     ).setHours(0, 0, 0, 0);
 
     const today = new Date().setHours(0, 0, 0, 0);
-
     return lastDate < today;
   };
 
@@ -191,7 +189,6 @@ const DailyCollectionReport = () => {
       );
 
     if (!matchesSearch) return false;
-
     if (loan.emiType === 'Daily EMI') return true;
 
     if (loan.emiType === 'Weekly EMI') {
@@ -210,9 +207,13 @@ const DailyCollectionReport = () => {
   const sortedFilteredTodos = [...filteredTodos].sort((a, b) => {
     const aOverdue = isOverdue(a);
     const bOverdue = isOverdue(b);
-
     return Number(bOverdue) - Number(aOverdue);
   });
+
+  // 🔥 TARGET FILTER COUNT ENGINE: Jo aaj collect ho chuke hain, unhe dynamic remaining se nikal do
+  const remainingTargetsCount = filteredTodos.filter(
+    (loan) => !collections.some((p) => p.loanId === loan.loanId)
+  ).length;
 
   const filteredCollections = collections.filter((item) => {
     const matchesSearch =
@@ -245,7 +246,7 @@ const DailyCollectionReport = () => {
             </h2>
 
             <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mt-1 italic">
-              Node: Mathura_Core | Live Collection Engine
+              Node: Mathura_Core | Daily Todo Checklist Engine
             </p>
           </div>
         </div>
@@ -256,7 +257,7 @@ const DailyCollectionReport = () => {
 
             <div>
               <span className="text-[8px] uppercase opacity-60 block">
-                Gross Recovery Today
+                Logged Collections Today
               </span>
 
               <span className="text-lg font-black">
@@ -371,23 +372,27 @@ const DailyCollectionReport = () => {
               <div className="bg-slate-900 text-white px-5 py-4 rounded-2xl font-black text-xs uppercase tracking-wider flex justify-between items-center">
                 <span className="flex items-center gap-2">
                   <FiClock className="text-blue-400" />
-                  Operational Route: {selectedTodoDay} Schedule
+                  Operational Route: {selectedTodoDay} Targets
                 </span>
 
                 <span className="bg-white/10 px-3 py-1 rounded-md text-[10px] text-emerald-400 font-mono">
-                  {filteredTodos.length} Active Targets
+                  {remainingTargetsCount} Remaining / {filteredTodos.length} Total
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {sortedFilteredTodos.map((loan) => {
                   const overdue = isOverdue(loan);
+                  // 🔥 TODO CORE STATE CHECK: Agar aaj is loan ki entry ledger array me hai, yaani ye done hai
+                  const isCollectedToday = collections.some((p) => p.loanId === loan.loanId);
 
                   return (
                     <div
                       key={loan._id}
                       className={`border rounded-[1.8rem] p-5 sm:p-6 shadow-sm flex flex-col justify-between transition-all ${
-                        overdue
+                        isCollectedToday
+                          ? 'bg-slate-50/80 border-slate-200 opacity-75'
+                          : overdue
                           ? 'bg-rose-50 border-rose-200'
                           : 'bg-white border-slate-200 hover:border-slate-400'
                       }`}
@@ -397,7 +402,9 @@ const DailyCollectionReport = () => {
                           <div>
                             <h4
                               className={`font-black uppercase text-sm sm:text-base tracking-tight ${
-                                overdue
+                                isCollectedToday
+                                  ? 'text-slate-500 line-through'
+                                  : overdue
                                   ? 'text-rose-900'
                                   : 'text-slate-900'
                               }`}
@@ -410,11 +417,15 @@ const DailyCollectionReport = () => {
                             </p>
                           </div>
 
-                          {overdue && (
+                          {isCollectedToday ? (
+                            <span className="bg-emerald-100 text-emerald-700 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
+                              Done Today
+                            </span>
+                          ) : overdue ? (
                             <span className="bg-rose-500 text-white text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider animate-pulse">
                               Overdue
                             </span>
-                          )}
+                          ) : null}
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 border-y border-slate-100 my-4 py-3.5 text-xs">
@@ -425,7 +436,9 @@ const DailyCollectionReport = () => {
 
                             <b
                               className={`text-base font-black ${
-                                overdue
+                                isCollectedToday
+                                  ? 'text-slate-400'
+                                  : overdue
                                   ? 'text-rose-700'
                                   : 'text-slate-900'
                               }`}
@@ -446,17 +459,22 @@ const DailyCollectionReport = () => {
                         </div>
                       </div>
 
+                      {/* 🔥 CHECKBOX TOGGLE BUTTON */}
                       <button
                         onClick={() => handleCheckmarkEMI(loan)}
-                        disabled={markingId === loan._id}
+                        disabled={markingId === loan._id || isCollectedToday}
                         className={`w-full py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${
-                          overdue
+                          isCollectedToday
+                            ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                            : overdue
                             ? 'bg-rose-600 text-white hover:bg-rose-700'
                             : 'bg-emerald-500 text-slate-900 hover:bg-emerald-400'
                         }`}
                       >
                         {markingId === loan._id
-                          ? 'Processing...'
+                          ? 'Syncing...'
+                          : isCollectedToday
+                          ? '✓ Checked off Today'
                           : overdue
                           ? 'Collect Overdue'
                           : 'Mark as Collected'}
@@ -610,4 +628,3 @@ const TableEmptyState = () => (
 );
 
 export default DailyCollectionReport;
-

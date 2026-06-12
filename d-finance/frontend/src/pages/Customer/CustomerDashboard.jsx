@@ -114,7 +114,7 @@ const CustomerDashboard = () => {
       <div style={headerFlex} className="header-flex">
         <div>
           <h2 style={portalTitle}>🚀 CUSTOMER TERMINAL</h2>
-          <p style={welcomeText}>{user.fullName} | Branch: Mathura</p>
+          <p style={welcomeText}>{user.fullName} | Branch: Prayagraj</p>
         </div>
         <button onClick={() => navigate('/customer/apply-loan')} style={applyBtn}>+ New Loan Request</button>
       </div>
