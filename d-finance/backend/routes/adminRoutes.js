@@ -12,7 +12,7 @@ const { verifyToken } = require("../middlewares/authMiddleware");
 // Controller
 const loanController = require("../controllers/loanController");
 
-// 🔥 SMART ROLE CHECKER ENGINE (Bypasses spaces and case-sensitivity)
+// SMART ROLE CHECKER ENGINE
 const allowRoles = (...allowedRoles) => {
   return (req, res, next) => {
     if (req.user && req.user.role) {
@@ -55,7 +55,7 @@ router.get("/stats", verifyToken, allowRoles("admin", "accountant", "officer", "
 });
 
 // =====================================
-// PAYMENT VERIFICATION
+// PAYMENT VERIFICATION & QUEUES
 // =====================================
 router.get("/pending-payments", verifyToken, allowRoles("admin", "accountant"), async (req, res) => {
   try {
@@ -70,7 +70,50 @@ router.post("/approve-payment/:id", verifyToken, allowRoles("admin", "accountant
 router.delete("/reject-payment/:id", verifyToken, allowRoles("admin", "accountant"), loanController.rejectPayment);
 
 // =====================================
-// APPROVE DIRECT REPAYMENT
+// 🔥 NEW: CUSTOMER SUBMIT PENDING PAYMENT (MANUAL QR PIPELINE)
+// =====================================
+router.post("/submit-pending-payment", verifyToken, allowRoles("admin", "accountant", "officer", "field officer", "fieldofficer", "advisor", "user", "customer", "Customer"), async (req, res) => {
+  try {
+    const { loanId, amount, utr, screenshot, remarks } = req.body;
+
+    const loan = await Loan.findOne({ loanId });
+    if (!loan) {
+      return res.status(404).json({ message: "Active loan reference file not found in core registry." });
+    }
+
+    // Duplicate submission safety protocol check
+    const existingPayment = await Payment.findOne({ utr: utr.trim() });
+    if (existingPayment) {
+      return res.status(400).json({ error: "⚠️ Security Notice: This UTR number has already been submitted for review." });
+    }
+
+    const payment = await Payment.create({
+      loanId: loan.loanId,
+      customerId: loan.customerId,
+      customerName: loan.customerName,
+      amount: Number(amount),
+      status: "Pending", // Forced to pending for Accountant verification
+      paymentMethod: "Manual QR",
+      gateway: "Manual",
+      utr: utr.trim(),
+      screenshot: screenshot, // Base64 string payload
+      remarks: remarks || "Manual QR snapshot transmitted from customer dashboard terminal."
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Payment receipt logged successfully under accountant review queue.",
+      paymentId: payment.paymentId
+    });
+
+  } catch (err) {
+    console.error("🚨 Manual Payment Submission Exception:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================================
+// APPROVE DIRECT REPAYMENT (OFFICER PRE-APPROVED FORCE ACCESS)
 // =====================================
 router.post("/approve-direct-repayment", verifyToken, allowRoles("admin", "accountant", "officer", "field officer", "fieldofficer", "advisor", "user"), async (req, res) => {
   try {
@@ -124,11 +167,10 @@ router.post("/approve-direct-repayment", verifyToken, allowRoles("admin", "accou
 });
 
 // =====================================
-// CUSTOMER MANAGEMENT (🔥 ROLE FILTER FIXED)
+// CUSTOMER MANAGEMENT
 // =====================================
 router.get("/all-customers", verifyToken, allowRoles("admin", "accountant", "officer", "field officer", "fieldofficer", "advisor", "user"), async (req, res) => {
   try {
-    // Looks up both 'user' and 'customer' variations seamlessly
     const customers = await User.find({ role: { $in: ["user", "customer", "Customer", "User"] } }).select("-password").sort({ createdAt: -1 });
     res.json(customers);
   } catch (err) {

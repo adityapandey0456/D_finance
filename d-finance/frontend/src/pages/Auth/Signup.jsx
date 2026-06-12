@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signupUser } from "../../api/authApi";
+import { signupUser, loginUser } from "../../api/authApi"; 
 import { FiArrowLeft, FiEye, FiEyeOff } from 'react-icons/fi';
 
 const Signup = () => {
@@ -20,7 +20,7 @@ const Signup = () => {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
-    // 🔥 MOBILE NUMBER INPUT MASKING: Sirf numbers allow karein
+    // MOBILE NUMBER INPUT MASKING: Sirf numbers allow karein
     if (name === "mobile") {
         const onlyNums = value.replace(/[^0-9]/g, '');
         if (onlyNums.length <= 10) {
@@ -34,7 +34,6 @@ const Signup = () => {
   const handleSignup = async (e) => {
     e.preventDefault();
 
-    // 🔥 VALIDATION LOGIC
     if (formData.mobile.length !== 10) {
         alert("⚠️ Please enter a valid 10-digit mobile number.");
         return;
@@ -48,18 +47,60 @@ const Signup = () => {
         email: formData.email.toLowerCase().trim()
       };
 
+      // 1️⃣ SILENT SIGNUP CALL
       const res = await signupUser(finalData);
       
-      // Backend status code check
-      if (res.status === 201 || res.data.success) {
-        alert("✅ Registration Successful! Please login.");
-        navigate('/login');
+      if (res.status === 201 || res.data?.success || res.status === 200) {
+        
+        let validToken = res.data?.token || res.data?.data?.token;
+        let validUser = res.data?.user || res.data?.data?.user;
+
+        // 2️⃣ AGGRESSIVE SILENT AUTO-LOGIN (If signup didn't return token)
+        if (!validToken) {
+          try {
+            // 🔥 MAIN FIX: Sending both mobile and email to ensure login backend accepts it
+            const loginPayload = {
+              mobile: finalData.mobile,
+              email: finalData.email,
+              password: finalData.password
+            };
+            
+            const loginRes = await loginUser(loginPayload);
+            
+            validToken = loginRes.data?.token || loginRes.data?.data?.token;
+            validUser = loginRes.data?.user || loginRes.data?.data?.user;
+          } catch (loginErr) {
+            console.error("Silent Auto-Login Execution Failed:", loginErr);
+          }
+        }
+
+        // 3️⃣ FINAL REDIRECTION ENGINE
+        if (validToken && validToken !== "undefined") {
+          // Store actual verified auth details
+          localStorage.setItem('token', validToken);
+          localStorage.setItem('user', JSON.stringify(validUser || { role: 'Customer', fullName: finalData.fullName }));
+
+          // 🔥 INSTANT REDIRECT (window.location.replace clears history so they can't hit back to signup)
+          const userRole = String(validUser?.role || 'customer').toLowerCase().trim();
+          
+          if (userRole === 'admin') {
+            window.location.replace('/admin');
+          } else if (userRole === 'accountant') {
+            window.location.replace('/accountant/approval');
+          } else if (userRole === 'user' || userRole === 'advisor') {
+            window.location.replace('/user');
+          } else {
+            window.location.replace('/customer/dashboard'); 
+          }
+        } else {
+          // Failsafe Backup
+          navigate('/login');
+        }
       }
     } catch (err) {
-      // 🔥 DUPLICATE MOBILE CHECK: Backend error handle karega
-      const msg = err.response?.data?.error || "Registration Failed. Mobile might already be registered.";
+      // Show error only if registration genuinely fails (e.g., Duplicate Number)
+      const msg = err.response?.data?.error || err.response?.data?.message || "Registration Failed. Mobile or Email might already be registered.";
       alert(msg);
-    } finally {
       setLoading(false);
     }
   };
@@ -83,13 +124,6 @@ const Signup = () => {
             <label className="floating-label" style={floatingLabel}>Full Name</label>
             <div style={lineStyle}></div>
           </div>
-
-          {/* Role (Fixed) */}
-          {/* <div style={inputContainer}>
-            <div style={{...inputField, padding: '10px 0', fontWeight: '700', color: '#5a6b8d'}}>Customer (Borrower)</div>
-            <label style={fixedLabel}>Joining As</label>
-            <div style={lineStyle}></div>
-          </div> */}
 
           {/* Mobile Number */}
           <div style={inputContainer}>
@@ -127,7 +161,7 @@ const Signup = () => {
           </div>
 
           <button type="submit" disabled={loading} style={btnStyle}>
-            {loading ? 'Processing...' : 'Create Account'}
+            {loading ? 'Initializing Secure Node...' : 'Create Account'}
           </button>
         </form>
 
@@ -142,7 +176,7 @@ const Signup = () => {
   );
 };
 
-// ... (Styles remains same)
+// --- STYLES ---
 const pageWrapper = { height: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflowY: 'auto', padding: '20px 0', backgroundImage: 'url("https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1920&q=80")', backgroundSize: 'cover', backgroundPosition: 'center', };
 const bgOverlay = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255, 255, 255, 0.4)', backdropFilter: 'blur(8px)', zIndex: 0 };
 const loginCard = { position: 'relative', width: '90%', maxWidth: '450px', background: '#ffffff', padding: '40px 35px', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 10, maxHeight: '90vh', overflowY: 'auto' };
@@ -151,7 +185,6 @@ const subTitleStyle = { fontSize: '12px', color: '#1a3a5a', fontWeight: 'bold', 
 const inputContainer = { position: 'relative', width: '100%', marginBottom: '25px' };
 const inputField = { width: '100%', border: 'none', padding: '10px 35px 10px 0', fontSize: '15px', outline: 'none', background: 'transparent', color: '#333', position: 'relative', zIndex: 2, boxSizing: 'border-box' };
 const floatingLabel = { position: 'absolute', left: 0, top: '10px', color: '#999', pointerEvents: 'none', transition: '0.3s ease all' };
-const fixedLabel = { position: 'absolute', left: 0, top: '-15px', color: '#c58296', fontSize: '11px', fontWeight: '800' };
 const lineStyle = { height: '1px', width: '100%', background: '#eee' };
 const eyeIconStyle = { position: 'absolute', right: '0', top: '10px', cursor: 'pointer', color: '#999', zIndex: 3 };
 const btnStyle = { width: '100%', padding: '15px', background: '#c58296', color: '#fff', border: 'none', borderRadius: '30px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 8px 15px rgba(197, 130, 150, 0.3)', transition: '0.3s', textTransform: 'uppercase', marginTop: '10px' };
