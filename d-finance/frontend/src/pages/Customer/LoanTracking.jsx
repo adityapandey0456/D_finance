@@ -57,7 +57,7 @@ const LoanTracking = () => {
     };
     return styles[status] || styles.default;
   };
-
+  
   // --- 🔥 SMART EMI SCHEDULE ENGINE ---
   const generateEMISchedule = (loan) => {
     const schedule = [];
@@ -251,6 +251,7 @@ const LoanTracking = () => {
                         </div>
                       </div>
                     </div>
+
 
                     {/* 🔥 THE MAGIC: SIDE PAYMENT BUTTON FOR INDIVIDUAL EMIs */}
                     <div style={{display: 'flex', alignItems: 'center', gap: '15px'}}>
