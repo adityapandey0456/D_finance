@@ -809,6 +809,109 @@ app.get('/admin/daily-summary', async (req, res) => {
 
 // server.js mein ye code add karo
 
+// =======================================================
+// 🔥 ADD CUSTOMER ROUTE (WITH MULTER & MONGODB)
+// =======================================================
+
+// 1. Pehle Multer Setup (Image Uploads ke liye)
+const multer = require("multer");
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
+// 2. imageUploads yahan define ho gaya (Ye missing tha!)
+const imageUploads = upload.fields([
+  { name: 'custLivePhoto', maxCount: 1 },
+  { name: 'custAadhaarFront', maxCount: 1 },
+  { name: 'custAadhaarBack', maxCount: 1 },
+  { name: 'custVoterFront', maxCount: 1 },
+  { name: 'passbookPic', maxCount: 1 },
+  { name: 'nomineePic', maxCount: 1 },
+  { name: 'custSignature', maxCount: 1 }
+]);
+
+// 3. Final POST Route
+app.post('/api/customer/add', imageUploads, async (req, res) => {
+  try {
+    const formData = req.body;
+    const files = req.files;
+
+    console.log(`👉 Saving Data for: ${formData.fullName}`);
+
+    // Helper function: Image Buffer ko Base64 format mein badalne ke liye
+    const getBase64 = (fieldName) => {
+      if (files && files[fieldName] && files[fieldName][0]) {
+        const file = files[fieldName][0];
+        return `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+      }
+      return "";
+    };
+
+    // Password Hash karna zaroori hai
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(formData.password || "123456", salt);
+
+    // Naya Customer Database mein add karna
+    const newCustomer = new User({
+      fullName: formData.fullName,
+      mobile: formData.mobile,
+      email: formData.email,
+      password: hashedPassword,
+      role: 'Customer',
+      religion: formData.religion,
+      category: formData.category,
+      address: formData.address,
+      city: formData.city,
+      pincode: formData.pincode,
+      
+      // Images (Base64)
+      custLivePhoto: getBase64('custLivePhoto'),
+      custAadhaarFront: getBase64('custAadhaarFront'),
+      custAadhaarBack: getBase64('custAadhaarBack'),
+      custVoterFront: getBase64('custVoterFront'),
+      passbookPic: getBase64('passbookPic'),
+      nomineePic: getBase64('nomineePic'),
+      custSignature: getBase64('custSignature'),
+    });
+
+    const savedCustomer = await newCustomer.save();
+    console.log("✅ Customer Saved in DB:", savedCustomer._id);
+
+    // Agar form "Legacy" mode mein bhara gaya hai toh purana Loan bhi save karo
+    // 2. LOAN CREATION WITH FALLBACKS FOR NaN & TOTAL PAYABLE
+    if (formData.entryMode === 'legacy') {
+      const loanAmt = Number(formData.totalLoanAmount) || 0;
+      const paidAmt = Number(formData.amountPaid) || 0;
+
+      const newLoan = new Loan({
+        loanId: "LN-" + Math.floor(100000 + Math.random() * 900000),
+        customerId: savedCustomer._id,
+        customerName: savedCustomer.fullName,
+        amount: loanAmt,
+        totalPayable: loanAmt, // 🔥 YE FIELD MISSING THI JISSE ERROR AAYA
+        totalPending: loanAmt - paidAmt,
+        totalPaid: paidAmt,
+        emiType: formData.emiType || 'Weekly EMI',
+        installmentAmount: Number(formData.installmentAmount) || 0,
+        tenureMonths: Number(formData.tenureMonths) || 0,
+        status: 'Disbursed',
+        isAssigned: true,
+        disbursedAt: new Date(formData.disbursementDate || Date.now())
+      });
+
+      await newLoan.save();
+      console.log("✅ Legacy Loan Record created");
+    }
+
+    res.status(200).json({ 
+        success: true, 
+        message: `Customer ${formData.fullName} added successfully to MongoDB!` 
+    });
+
+  } catch (error) {
+    console.error("❌ Add Customer Error:", error);
+    res.status(500).json({ error: "Server error while adding customer" });
+  }
+});
 
 // server.js mein
 // server.js mein route update karo

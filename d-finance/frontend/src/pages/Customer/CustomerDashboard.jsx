@@ -76,16 +76,21 @@ const CustomerDashboard = () => {
   }, [orderId, setSearchParams, fetchData]);
 
   // --- 📊 LOGIC & CALCULATIONS ---
-  const activeLoan = loans.find(l => l.status === 'Disbursed' || l.status === 'Approved');
-  const pendingLoan = loans.find(l => ['Applied', 'Verification Pending', 'Field Verified'].includes(l.status));
-  
-  const totalPayable = activeLoan ? activeLoan.totalPayable : 0;
-  
-  const totalPaid = payments
+  // --- 📊 LOGIC & CALCULATIONS ---
+const activeLoan = loans.find(l => l.status === 'Disbursed' || l.status === 'Approved');
+const pendingLoan = loans.find(l => ['Applied', 'Verification Pending', 'Field Verified'].includes(l.status));
+
+// 🔥 FIX: totalPaid ab Loan ke data se priority lega (ya payments array se)
+const dbTotalPaid = activeLoan ? (activeLoan.totalPaid || 0) : 0;
+const paymentsTotalPaid = payments
     .filter(p => p.status === 'Approved')
     .reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
 
-  const totalDue = activeLoan ? (activeLoan.totalPending || (totalPayable - totalPaid)) : 0;
+// Jo bada ho use dikhao
+const totalPaid = Math.max(dbTotalPaid, paymentsTotalPaid);
+
+// Total Due calculation (Total Payable - Total Paid)
+const totalDue = activeLoan ? (activeLoan.totalPayable - totalPaid) : 0;
 
   // Updated Gateway Trigger
   const openPayGateway = (loan) => {

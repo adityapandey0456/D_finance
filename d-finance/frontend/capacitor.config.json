@@ -1,0 +1,9 @@
+{
+  "appId": "com.example.app",
+  "appName": "D-Finance",
+  "webDir": "dist",
+  "server": {
+    "url": "https://dfinance.space",
+    "cleartext": true
+  }
+}

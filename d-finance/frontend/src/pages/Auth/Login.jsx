@@ -79,7 +79,7 @@ const Login = () => {
       }
 
     } catch (error) {
-      alert("Invalid Credentials or Server Error");
+      alert("Error: " + (error.response ? error.response.data : error.message));
     } finally {
       setLoading(false);
     }
@@ -353,7 +353,7 @@ const Login = () => {
       </div>
 
       <p style={branchTag}>
-        D-Finance • Mathura Branch
+        D-Finance • Prayagraj Branch
       </p>
 
     </div>

@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/core": "^8.4.0",
     "@cashfreepayments/cashfree-js": "^1.0.7",
     "axios": "^1.13.5",
     "cashfree-dropjs": "^1.1.5",
@@ -23,6 +24,8 @@
     "recharts": "^3.8.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
     "@vitejs/plugin-react": "^6.0.2",

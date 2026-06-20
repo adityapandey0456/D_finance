@@ -1,0 +1,14 @@
+# Node Modules
+node_modules/
+
+# Environment variables
+.env
+
+# Build files
+dist/
+build/
+android/
+ios/
+
+# Logs
+*.log

@@ -2,11 +2,23 @@ import axios from 'axios';
 
 // 🧭 AUTOMATIC ENVIRONMENT DETECTION ENGINE
 // api/axios.js mein baseURL ko is tarah update karo:
+// const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+// const API = axios.create({
+//   // 🔥 AUTO-SWITCH MATRIX ACTIVATE: Localhost par local port chalega, prod par live URL
+//   baseURL: isLocal ? 'http://localhost:5000/api' : 'https://dfinance.space/api', // 5000 ko apne local backend port se replace kar lena agar alag hai
+//   withCredentials: true,
+//   timeout: 60000,
+// });
+
+// 🧭 AUTOMATIC ENVIRONMENT DETECTION ENGINE
+// Capacitor check add karo
+const isCapacitor = window.location.protocol === 'capacitor:';
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 const API = axios.create({
-  // 🔥 AUTO-SWITCH MATRIX ACTIVATE: Localhost par local port chalega, prod par live URL
-  baseURL: isLocal ? 'http://localhost:5000/api' : 'https://dfinance.space/api', // 5000 ko apne local backend port se replace kar lena agar alag hai
+  // 🔥 AGAR CAPACITOR (Android App) HAI, TOH HAMESHA LIVE URL USE KARO
+  baseURL: (isCapacitor || !isLocal) ? 'https://dfinance.space/api' : 'http://localhost:5000/api',
   withCredentials: true,
   timeout: 60000,
 });
