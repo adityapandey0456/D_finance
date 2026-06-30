@@ -118,7 +118,7 @@ const PaymentModal = ({ loan, onClose, onRefresh, customAmount }) => {
               alt="Official Settlement QR Gateway"
               className="w-full h-full object-contain"
               onError={(e) => {
-                e.target.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=dfinance@upi&am=${paymentAmount}&tn=${loan.loanId}`;
+                // e.target.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=dfinance@upi&am=${paymentAmount}&tn=${loan.loanId}`;
               }}
             />
           </div>
