@@ -63,7 +63,7 @@ const LandingPage = () => {
               <a href="#intelligence" onClick={() => setIsMobileMenuOpen(false)} style={mobLink}>Intelligence</a>
               <a href="#contact" onClick={() => setIsMobileMenuOpen(false)} style={mobLink}>Contact Us</a>
               <Link to="/login" style={mobLink}>Sign In</Link>
-              <Link to="/signup" style={mobBtn}>Launch App</Link>
+              <Link to="/signup" style={mobBtn}>Get Started</Link>
             </motion.div>
           )}
         </AnimatePresence>
